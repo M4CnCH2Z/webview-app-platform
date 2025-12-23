@@ -1,0 +1,16 @@
+{
+  "name": "@platform/shared",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.4.5",
+    "eslint": "^9.4.0",
+    "@platform/config": "workspace:*"
+  }
+}

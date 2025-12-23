@@ -1,0 +1,18 @@
+{
+  "name": "@platform/bridge-contract",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5",
+    "eslint": "^9.4.0",
+    "@platform/config": "workspace:*"
+  }
+}

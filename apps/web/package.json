@@ -1,0 +1,31 @@
+{
+  "name": "@platform/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@platform/api-client": "workspace:*",
+    "@platform/bridge-contract": "workspace:*",
+    "cookie": "^0.6.0",
+    "ioredis": "^5.4.2",
+    "next": "14.2.3",
+    "pg": "^8.12.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "uuid": "^9.0.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@platform/config": "workspace:*",
+    "@types/node": "25.0.3",
+    "@types/react": "19.2.7",
+    "eslint": "^9.4.0",
+    "typescript": "^5.4.5"
+  }
+}
