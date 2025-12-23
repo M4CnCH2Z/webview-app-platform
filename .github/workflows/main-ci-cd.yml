@@ -117,4 +117,4 @@ jobs:
           ./gradlew lint testDebugUnitTest assembleDebug
       - name: Internal/QA deploy (placeholder)
         if: ${{ needs.changes.outputs.android == 'true' || needs.changes.outputs.bridge == 'true' }}
-        run: echo "Placeholder: upload to internal/QA distribution"
+        run: echo "Placeholder - upload to internal/QA distribution"
