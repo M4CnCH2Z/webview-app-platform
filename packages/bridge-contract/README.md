@@ -2,6 +2,8 @@
 
 Contract-first schema for WebView bridge messages.
 
+> 한국어: [README.ko.md](README.ko.md)
+
 ## Message shapes
 - Request: `{ id, version, type, payload }`
 - Response: `{ id, ok, payload?, error? }`
