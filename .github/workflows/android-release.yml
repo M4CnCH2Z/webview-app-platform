@@ -10,6 +10,9 @@ concurrency:
   group: release-android-${{ github.ref }}
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   release:
     runs-on: ubuntu-latest
