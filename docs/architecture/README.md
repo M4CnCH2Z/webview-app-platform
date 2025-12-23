@@ -1,5 +1,7 @@
 # Architecture Notes
 
+> 한국어: [README.ko.md](README.ko.md)
+
 ## Monorepo Layout
 - Apps: `apps/web` (Next.js App Router), `apps/android` (native WebView shell)
 - Shared packages: bridge contract, API client, shared utilities, lint/tsconfig configs
