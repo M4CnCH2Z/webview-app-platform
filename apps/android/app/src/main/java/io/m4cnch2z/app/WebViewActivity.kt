@@ -38,6 +38,7 @@ class WebViewActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Log.i("WebViewActivity", "test")
         setContentView(R.layout.activity_webview)
         webView = findViewById(R.id.webView)
 
