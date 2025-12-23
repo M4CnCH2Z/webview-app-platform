@@ -42,19 +42,22 @@ jobs:
         run: |
           if [ "${{ needs.changes.outputs.web }}" != "true" ] && [ "${{ needs.changes.outputs.bridge }}" != "true" ]; then
             echo "No web-related changes detected. Skipping."
-            exit 0
           fi
       - uses: actions/checkout@v4
+        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }} # gated by WEB_ENABLED
       - uses: actions/setup-node@v4
+        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }} # gated by WEB_ENABLED
         with:
           node-version: 20
           cache: pnpm
       - name: Setup pnpm (corepack)
+        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }} # gated by WEB_ENABLED
         run: |
           corepack enable
           corepack prepare pnpm@8.15.4 --activate
       - name: Restore pnpm store cache
         uses: actions/cache@v4
+        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }} # gated by WEB_ENABLED
         with:
           path: ~/.pnpm-store
           key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -62,14 +65,17 @@ jobs:
             pnpm-${{ runner.os }}-
       - name: Restore turborepo cache
         uses: actions/cache@v4
+        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }} # gated by WEB_ENABLED
         with:
           path: ./.turbo
           key: turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: |
             turbo-${{ runner.os }}-
       - name: Install dependencies
+        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }} # gated by WEB_ENABLED
         run: pnpm install --frozen-lockfile
       - name: Lint/Test/Build web
+        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }} # gated by WEB_ENABLED
         run: pnpm turbo run lint test build --filter=apps/web...
 
   android:
@@ -80,16 +86,18 @@ jobs:
         run: |
           if [ "${{ needs.changes.outputs.android }}" != "true" ] && [ "${{ needs.changes.outputs.bridge }}" != "true" ]; then
             echo "No android-related changes detected. Skipping."
-            exit 0
           fi
       - uses: actions/checkout@v4
+        if: ${{ needs.changes.outputs.android == 'true' || needs.changes.outputs.bridge == 'true' }} # gated by ANDROID_ENABLED
       - name: Set up JDK
         uses: actions/setup-java@v4
+        if: ${{ needs.changes.outputs.android == 'true' || needs.changes.outputs.bridge == 'true' }} # gated by ANDROID_ENABLED
         with:
           distribution: temurin
           java-version: 17
       - name: Restore Gradle cache
         uses: actions/cache@v4
+        if: ${{ needs.changes.outputs.android == 'true' || needs.changes.outputs.bridge == 'true' }} # gated by ANDROID_ENABLED
         with:
           path: |
             ~/.gradle/caches
@@ -99,5 +107,6 @@ jobs:
             gradle-${{ runner.os }}-
       - name: Android lint/unit/build
         working-directory: apps/android
+        if: ${{ needs.changes.outputs.android == 'true' || needs.changes.outputs.bridge == 'true' }} # gated by ANDROID_ENABLED
         run: |
           ./gradlew lint testDebugUnitTest assembleDebug
