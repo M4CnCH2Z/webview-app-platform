@@ -43,23 +43,23 @@ jobs:
             echo "No web-related changes detected. Skipping."
           fi
       - uses: actions/checkout@v4
-        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }} # gated by WEB_ENABLED
+        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }}
       - uses: actions/setup-node@v4
-        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }} # gated by WEB_ENABLED
+        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }}
         with:
           node-version: 20
       - uses: pnpm/action-setup@v2
-        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }} # gated by WEB_ENABLED
+        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }}
         with:
           version: 8.15.4
       - name: Setup pnpm (corepack)
-        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }} # gated by WEB_ENABLED
+        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }}
         run: |
           corepack enable
           corepack prepare pnpm@8.15.4 --activate
       - name: Restore pnpm store cache
         uses: actions/cache@v4
-        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }} # gated by WEB_ENABLED
+        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }}
         with:
           path: ~/.pnpm-store
           key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -67,20 +67,20 @@ jobs:
             pnpm-${{ runner.os }}-
       - name: Restore turborepo cache
         uses: actions/cache@v4
-        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }} # gated by WEB_ENABLED
+        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }}
         with:
           path: ./.turbo
           key: turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: |
             turbo-${{ runner.os }}-
       - name: Install dependencies
-        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }} # gated by WEB_ENABLED
+        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }}
         run: pnpm install --no-frozen-lockfile
       - name: Lint/Test/Build web
-        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }} # gated by WEB_ENABLED
+        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }}
         run: pnpm turbo run lint test build --filter=apps/web...
       - name: Deploy (placeholder)
-        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }} # gated by WEB_ENABLED
+        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }}
         run: echo "Deploy step placeholder for web (replace with real deploy)"
 
   android:
@@ -93,16 +93,16 @@ jobs:
             echo "No android-related changes detected. Skipping."
           fi
       - uses: actions/checkout@v4
-        if: ${{ needs.changes.outputs.android == 'true' || needs.changes.outputs.bridge == 'true' }} # gated by ANDROID_ENABLED
+        if: ${{ needs.changes.outputs.android == 'true' || needs.changes.outputs.bridge == 'true' }}
       - name: Set up JDK
         uses: actions/setup-java@v4
-        if: ${{ needs.changes.outputs.android == 'true' || needs.changes.outputs.bridge == 'true' }} # gated by ANDROID_ENABLED
+        if: ${{ needs.changes.outputs.android == 'true' || needs.changes.outputs.bridge == 'true' }}
         with:
           distribution: temurin
           java-version: 17
       - name: Restore Gradle cache
         uses: actions/cache@v4
-        if: ${{ needs.changes.outputs.android == 'true' || needs.changes.outputs.bridge == 'true' }} # gated by ANDROID_ENABLED
+        if: ${{ needs.changes.outputs.android == 'true' || needs.changes.outputs.bridge == 'true' }}
         with:
           path: |
             ~/.gradle/caches
@@ -112,9 +112,9 @@ jobs:
             gradle-${{ runner.os }}-
       - name: Android lint/unit/build
         working-directory: apps/android
-        if: ${{ needs.changes.outputs.android == 'true' || needs.changes.outputs.bridge == 'true' }} # gated by ANDROID_ENABLED
+        if: ${{ needs.changes.outputs.android == 'true' || needs.changes.outputs.bridge == 'true' }}
         run: |
           ./gradlew lint testDebugUnitTest assembleDebug
       - name: Internal/QA deploy (placeholder)
-        if: ${{ needs.changes.outputs.android == 'true' || needs.changes.outputs.bridge == 'true' }} # gated by ANDROID_ENABLED
+        if: ${{ needs.changes.outputs.android == 'true' || needs.changes.outputs.bridge == 'true' }}
         run: echo "Placeholder: upload to internal/QA distribution"
