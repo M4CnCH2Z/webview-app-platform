@@ -1,0 +1,97 @@
+name: PR CI
+
+on:
+  pull_request:
+    branches:
+      - "**"
+  workflow_dispatch: {}
+
+concurrency:
+  group: pr-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      web: ${{ steps.filter.outputs.web }}
+      android: ${{ steps.filter.outputs.android }}
+      bridge: ${{ steps.filter.outputs.bridge }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            web:
+              - 'apps/web/**'
+            android:
+              - 'apps/android/**'
+            bridge:
+              - 'packages/bridge-contract/**'
+
+  web:
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate change set
+        run: |
+          if [ "${{ needs.changes.outputs.web }}" != "true" ] && [ "${{ needs.changes.outputs.bridge }}" != "true" ]; then
+            echo "No web-related changes detected. Skipping."
+            exit 0
+          fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Enable corepack
+        run: corepack enable
+      - name: Restore pnpm store cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.pnpm-store
+          key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-${{ runner.os }}-
+      - name: Restore turborepo cache
+        uses: actions/cache@v4
+        with:
+          path: ./.turbo
+          key: turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Lint/Test/Build web
+        run: pnpm turbo run lint test build --filter=apps/web...
+
+  android:
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate change set
+        run: |
+          if [ "${{ needs.changes.outputs.android }}" != "true" ] && [ "${{ needs.changes.outputs.bridge }}" != "true" ]; then
+            echo "No android-related changes detected. Skipping."
+            exit 0
+          fi
+      - uses: actions/checkout@v4
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Restore Gradle cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+      - name: Android lint/unit/build
+        working-directory: apps/android
+        run: |
+          ./gradlew lint testDebugUnitTest assembleDebug
