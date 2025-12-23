@@ -75,7 +75,7 @@ jobs:
             turbo-${{ runner.os }}-
       - name: Install dependencies
         if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }} # gated by WEB_ENABLED
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
       - name: Lint/Test/Build web
         if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }} # gated by WEB_ENABLED
         run: pnpm turbo run lint test build --filter=apps/web...

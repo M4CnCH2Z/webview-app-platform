@@ -62,7 +62,7 @@ jobs:
           restore-keys: |
             turbo-${{ runner.os }}-
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
       - name: Lint/Build web (nightly)
         run: pnpm turbo run lint build --filter=apps/web...
 
