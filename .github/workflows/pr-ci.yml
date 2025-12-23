@@ -50,6 +50,10 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
+      - uses: pnpm/action-setup@v2
+        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }} # gated by WEB_ENABLED
+        with:
+          version: 8.15.4
       - name: Setup pnpm (corepack)
         if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }} # gated by WEB_ENABLED
         run: |
