@@ -25,11 +25,13 @@ import java.util.UUID
 class WebViewActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private val allowlistWithPort: Set<String> = setOf(
+        "https://project.sandeul.work",
         "https://app.example.com",
         "http://10.0.2.2:3000",
         "http://localhost:3000"
     )
     private val allowlistHosts: Set<String> = setOf(
+        "project.sandeul.work",
         "app.example.com",
         "10.0.2.2",
         "localhost"
@@ -113,7 +115,7 @@ class WebViewActivity : AppCompatActivity() {
                 return deepLink.toString()
             }
         }
-        return "http://10.0.2.2:3000"
+        return "https://project.sandeul.work"
     }
 
     private fun openExternal(url: String) {
