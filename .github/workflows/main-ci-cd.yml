@@ -60,6 +60,7 @@ jobs:
       - name: Build (${{ env.DEPLOY_ENV }})
         env:
           REACT_APP_API_URL: ${{ secrets.REACT_APP_API_URL }}
+          CI: false # to prevent CRA from treating warnings as errors
         run: npm run build --verbose
       - name: Upload web build artifact
         uses: actions/upload-artifact@v4
