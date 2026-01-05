@@ -18,7 +18,7 @@
     "react-scripts": "5.0.1",
     "web-vitals": "^2.1.4"
   },
-   "overrides": {
+  "overrides": {
     "react-helmet-async": {
       "react": "$react"
     }
@@ -46,5 +46,8 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "devDependencies": {
+    "yaml": "^2.8.2"
   }
 }
