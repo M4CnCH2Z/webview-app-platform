@@ -116,6 +116,7 @@ class WebViewActivity : AppCompatActivity() {
             }
         }
         return "https://project.sandeul.work"
+//        return "http://10.0.2.2:3000"
     }
 
     private fun openExternal(url: String) {
