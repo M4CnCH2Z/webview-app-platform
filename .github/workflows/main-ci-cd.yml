@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - release/**
   workflow_dispatch: {}
 
 concurrency:
@@ -36,52 +37,35 @@ jobs:
   web:
     needs: changes
     runs-on: ubuntu-latest
+    if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }}
+    environment: ${{ startsWith(github.ref, 'refs/heads/release/') && 'staging' || 'production' }}
+    env:
+      DEPLOY_ENV: ${{ startsWith(github.ref, 'refs/heads/release/') && 'staging' || 'production' }}
+    defaults:
+      run:
+        working-directory: apps/web
     steps:
-      - name: Evaluate change set
-        run: |
-          if [ "${{ needs.changes.outputs.web }}" != "true" ] && [ "${{ needs.changes.outputs.bridge }}" != "true" ]; then
-            echo "No web-related changes detected. Skipping."
-          fi
       - uses: actions/checkout@v4
-        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }}
       - uses: actions/setup-node@v4
-        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }}
         with:
           node-version: 20
-      - uses: pnpm/action-setup@v2
-        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }}
-        with:
-          version: 8.15.4
-      - name: Setup pnpm (corepack)
-        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }}
-        run: |
-          corepack enable
-          corepack prepare pnpm@8.15.4 --activate
-      - name: Restore pnpm store cache
-        uses: actions/cache@v4
-        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }}
-        with:
-          path: ~/.pnpm-store
-          key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            pnpm-${{ runner.os }}-
-      - name: Restore turborepo cache
-        uses: actions/cache@v4
-        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }}
-        with:
-          path: ./.turbo
-          key: turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            turbo-${{ runner.os }}-
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
       - name: Install dependencies
-        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }}
-        run: pnpm install --no-frozen-lockfile
-      - name: Lint/Test/Build web
-        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }}
-        run: pnpm turbo run lint test build --filter=apps/web...
-      - name: Deploy (placeholder)
-        if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.bridge == 'true' }}
-        run: echo "Deploy step placeholder for web (replace with real deploy)"
+        run: npm ci
+      - name: Test
+        env:
+          CI: true
+        run: npm test -- --watch=false
+      - name: Build (${{ env.DEPLOY_ENV }})
+        env:
+          REACT_APP_API_URL: ${{ secrets.REACT_APP_API_URL }}
+        run: npm run build
+      - name: Upload web build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-${{ env.DEPLOY_ENV }}-build
+          path: apps/web/build
 
   android:
     needs: changes
