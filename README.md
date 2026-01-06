@@ -1,16 +1,18 @@
 # WebView App Platform Monorepo
 
-Monorepo for a WebView-hosted Android app, Next.js web/BFF, and shared bridge contracts.
+Monorepo for a WebView-hosted Android app, React web frontend and Spring Boot API (both based on `dbswhd4932/shoppingmall_project`), and shared bridge contracts.
 
 ## Stack
 - Monorepo: pnpm + turborepo
-- Web/BFF: Next.js (App Router) with route handlers
+- Web: React (CRA) frontend from `dbswhd4932/shoppingmall_project`
+- Backend: Spring Boot API from `dbswhd4932/shoppingmall_project`
 - Android: Native WebView shell (Kotlin)
 - Shared: Bridge contract (zod), API client, shared utils, config
 - Infra: Postgres + Redis via docker-compose
 
 ## Directory Layout
-- `apps/web`: Next.js app (web UI + BFF APIs)
+- `apps/web`: React (CRA) app built from the frontend sources of [dbswhd4932/shoppingmall_project](https://github.com/dbswhd4932/shoppingmall_project)
+- `apps/api`: Spring Boot backend built from the backend sources of [dbswhd4932/shoppingmall_project](https://github.com/dbswhd4932/shoppingmall_project)
 - `apps/android`: Android WebView shell (`io.m4cnch2z.app`)
 - `packages/bridge-contract`: Contract-first schemas for Web↔Native bridge
 - `packages/api-client`: Fetch wrapper for BFF APIs
@@ -23,11 +25,13 @@ Monorepo for a WebView-hosted Android app, Next.js web/BFF, and shared bridge co
 
 ## Getting Started
 1) Install deps: `pnpm install`
-2) Infra (optional local DB/cache): `cd infra && docker compose up -d`
+<!-- 2) Infra (optional local DB/cache): `cd infra && docker compose up -d`
+   - For the Spring Boot backend (`apps/api`), start local MySQL (port 3307, db `shoppingmall`, user `shopuser`, pass `shop1234`), Redis (6379), and RabbitMQ (5672) to match `application-local.yml`.
 3) Apply DB migrations:
    - With container psql: `cd infra && docker compose cp migrations/001_init.sql postgres:/tmp/001_init.sql && docker compose cp migrations/002_users_posts.sql postgres:/tmp/002_users_posts.sql && docker compose exec -T postgres psql -U ${POSTGRES_USER:-appuser} -d ${POSTGRES_DB:-appdb} -f /tmp/001_init.sql && docker compose exec -T postgres psql -U ${POSTGRES_USER:-appuser} -d ${POSTGRES_DB:-appdb} -f /tmp/002_users_posts.sql`
-   - Or local psql: `psql "$DATABASE_URL" -f infra/migrations/001_init.sql` then `.../002_users_posts.sql`
-4) Web/BFF dev server: from repo root `pnpm dev` (Next.js on `http://localhost:3000`)
+   - Or local psql: `psql "$DATABASE_URL" -f infra/migrations/001_init.sql` then `.../002_users_posts.sql` -->
+2) Web dev server (CRA): `cd apps/web && npm install && npm start` (runs on `http://localhost:3000`)
+3) Backend dev server: `cd apps/api && ./gradlew bootRun --args='--spring.profiles.active=local'`
 4) Android app:
    - Open `apps/android` in Android Studio, or CLI: `cd apps/android && ./gradlew installDebug`
    - WebView dev URL defaults to `http://10.0.2.2:3000`; ensure the web dev server is running.
@@ -50,8 +54,8 @@ Monorepo for a WebView-hosted Android app, Next.js web/BFF, and shared bridge co
 - Key vars: `WEB_URL`, `ALLOWLIST_ORIGINS`, `SESSION_COOKIE_NAME`, `POSTGRES_*`, `REDIS_URL`.
 
 ## Useful Scripts
-- `pnpm dev` / `pnpm build` / `pnpm lint` / `pnpm typecheck`
-- `cd apps/android && ./gradlew assembleDebug` (or `installDebug`)
+- Web (CRA): `cd apps/web && npm start` / `npm run build`
+- Android: `cd apps/android && ./gradlew assembleDebug` (or `installDebug`)
 
 ## API placeholders (in-memory)
 - Auth/Session: backed by Postgres (sessions table) + Redis cache/denylist.

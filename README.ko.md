@@ -2,19 +2,22 @@
 
 ## 스택
 - Monorepo: pnpm + turborepo
-- Web/BFF: Next.js (App Router) + Route Handlers
+- Web: React (CRA) — `apps/web`은 [dbswhd4932/shoppingmall_project](https://github.com/dbswhd4932/shoppingmall_project) 프런트엔드 소스를 활용
+- Backend: Spring Boot — `apps/api`는 같은 저장소의 백엔드 소스를 이관
 - Android: Kotlin WebView Shell
 - Shared: 브릿지 계약(zod), API 클라이언트, 공용 설정
 - Infra: Postgres + Redis (docker-compose)
 
 ## 시작하기
 1) 의존성 설치: `pnpm install`
-2) 인프라 실행(선택): `cd infra && docker compose up -d`
+<!-- 2) 인프라 실행(선택): `cd infra && docker compose up -d`
+   - Spring Boot 백엔드(`apps/api`)는 `application-local.yml`에 맞춰 MySQL(3307, db: shoppingmall, user/pass: shopuser/shop1234), Redis(6379), RabbitMQ(5672)가 필요합니다.
 3) DB 마이그레이션 적용:
    - 컨테이너 psql: `cd infra && docker compose cp migrations/001_init.sql postgres:/tmp/001_init.sql && docker compose cp migrations/002_users_posts.sql postgres:/tmp/002_users_posts.sql && docker compose exec -T postgres psql -U ${POSTGRES_USER:-appuser} -d ${POSTGRES_DB:-appdb} -f /tmp/001_init.sql && docker compose exec -T postgres psql -U ${POSTGRES_USER:-appuser} -d ${POSTGRES_DB:-appdb} -f /tmp/002_users_posts.sql`
-   - 로컬 psql: `psql "$DATABASE_URL" -f infra/migrations/001_init.sql` 후 `.../002_users_posts.sql`
-4) Web/BFF 개발 서버: 루트에서 `pnpm dev` (http://localhost:3000)
-5) Android 앱: `apps/android`를 Android Studio로 열거나 `cd apps/android && ./gradlew installDebug`
+   - 로컬 psql: `psql "$DATABASE_URL" -f infra/migrations/001_init.sql` 후 `.../002_users_posts.sql` -->
+2) Web 개발 서버(CRA): `cd apps/web && npm install && npm start` (http://localhost:3000)
+3) Backend 개발 서버: `cd apps/api && ./gradlew bootRun --args='--spring.profiles.active=local'`
+4) Android 앱: `apps/android`를 Android Studio로 열거나 `cd apps/android && ./gradlew installDebug`
    - WebView 초기 URL: `http://10.0.2.2:3000` (에뮬레이터 기준)
    - 프록시(Burp 등)를 쓰면 10.0.2.2:3000 허용 또는 프록시 해제
 
@@ -38,5 +41,5 @@
 - `.env.example` 참고: `DATABASE_URL`, `REDIS_URL`, `ALLOWLIST_ORIGINS`, `SESSION_COOKIE_NAME` 등.
 
 ## 스크립트
-- `pnpm dev` / `pnpm build` / `pnpm lint` / `pnpm typecheck`
+- Web (CRA): `cd apps/web && npm start` / `npm run build`
 - Android CLI: `cd apps/android && ./gradlew assembleDebug` 또는 `installDebug`
