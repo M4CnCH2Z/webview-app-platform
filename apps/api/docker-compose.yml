@@ -1,0 +1,186 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: shoppingmall-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root1234
+      MYSQL_DATABASE: shoppingmall
+      MYSQL_USER: shopuser
+      MYSQL_PASSWORD: shop1234
+      TZ: Asia/Seoul
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    networks:
+      - shop-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: shoppingmall-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --appendfsync everysec
+    volumes:
+      - redis-data:/data
+    networks:
+      - shop-network
+    restart: unless-stopped
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: shoppingmall-redis-commander
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8081:8081"
+    networks:
+      - shop-network
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  # =======================================================
+  # RabbitMQ 클러스터 - 3개 노드 (HA 구성)
+  # =======================================================
+
+  # 노드 1 (메인 노드 - Master)
+  rabbitmq1:
+    image: rabbitmq:3.12-management-alpine
+    container_name: rabbitmq1
+    hostname: rabbitmq1
+    environment:
+      # [중요] 모든 노드가 동일한 Erlang Cookie를 가져야 클러스터링 가능
+      RABBITMQ_ERLANG_COOKIE: "VQNnQPg9HA5UgI50J+kKl3xsG3S8N8q+lNOyGz14Jyk="
+      RABBITMQ_NODENAME: rabbit@rabbitmq1
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin1234
+    ports:
+      - "5672:5672"    # AMQP protocol port (메인 노드만 외부 노출)
+      - "15672:15672"  # Management UI port (메인 노드만 외부 노출)
+    volumes:
+      - rabbitmq1-data:/var/lib/rabbitmq
+    networks:
+      - shop-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 노드 2 (슬레이브 노드 1)
+  rabbitmq2:
+    image: rabbitmq:3.12-management-alpine
+    container_name: rabbitmq2
+    hostname: rabbitmq2
+    environment:
+      # [중요] 동일한 Erlang Cookie
+      RABBITMQ_ERLANG_COOKIE: "VQNnQPg9HA5UgI50J+kKl3xsG3S8N8q+lNOyGz14Jyk="
+      RABBITMQ_NODENAME: rabbit@rabbitmq2
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin1234
+    depends_on:
+      - rabbitmq1  # rabbitmq1이 먼저 시작되도록 설정
+    volumes:
+      - rabbitmq2-data:/var/lib/rabbitmq
+    networks:
+      - shop-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 노드 3 (슬레이브 노드 2)
+  rabbitmq3:
+    image: rabbitmq:3.12-management-alpine
+    container_name: rabbitmq3
+    hostname: rabbitmq3
+    environment:
+      # [중요] 동일한 Erlang Cookie
+      RABBITMQ_ERLANG_COOKIE: "VQNnQPg9HA5UgI50J+kKl3xsG3S8N8q+lNOyGz14Jyk="
+      RABBITMQ_NODENAME: rabbit@rabbitmq3
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin1234
+    depends_on:
+      - rabbitmq1
+    volumes:
+      - rabbitmq3-data:/var/lib/rabbitmq
+    networks:
+      - shop-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =======================================================
+  # Prometheus - 메트릭 수집 & 저장
+  # =======================================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: shoppingmall-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'  # 30일간 데이터 보관
+    networks:
+      - shop-network
+    restart: unless-stopped
+
+  # =======================================================
+  # Grafana - 메트릭 시각화 대시보드
+  # =======================================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: shoppingmall-grafana
+    ports:
+      - "3001:3000"  # 포트 3001로 변경 (React는 3000 사용)
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin1234
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+    networks:
+      - shop-network
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  mysql-data:
+    driver: local
+  redis-data:
+    driver: local
+  # RabbitMQ 클러스터 볼륨 (3개 노드)
+  rabbitmq1-data:
+    driver: local
+  rabbitmq2-data:
+    driver: local
+  rabbitmq3-data:
+    driver: local
+  # Prometheus & Grafana 볼륨
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+
+networks:
+  shop-network:
+    driver: bridge

@@ -1,0 +1,109 @@
+server:
+  address: 0.0.0.0
+  port: 8080
+  # [보안] 서버 응답 헤더에서 Tomcat 버전 정보 등 제거
+  server-header: " "
+  servlet:
+    session:
+      timeout: 30m
+      cookie:
+        http-only: true   # [보안] XSS 공격을 통한 쿠키 탈취 방지
+        same-site: lax    # [로컬 전용] 로컬 개발 시에는 strict보다 lax가 테스트에 편리함
+  tomcat:
+    # [보안] 에러 응답 시 내부 코드 및 메시지 노출 방지
+    error:
+      include-stacktrace: never
+      include-message: false
+      include-binding-errors: never
+
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    # [보안] 로컬이더라도 SSL 사용 설정을 습관화 (실제 연결 실패 시 useSSL=false로 조정)
+    url: jdbc:mysql://localhost:3307/shoppingmall?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul
+    username: shopuser
+    password: shop1234
+  
+  main:
+    allow-bean-definition-overriding: true
+    
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        format_sql: true
+        show_sql: true # 로컬에서는 개발을 위해 유지
+        default_batch_fetch_size: 100
+    database: mysql
+    open-in-view: false
+
+  servlet:
+    multipart:
+      max-file-size: 10MB    # [보안] 대용량 요청을 통한 DoS 공격 방지
+      max-request-size: 10MB
+
+  redis:
+    host: localhost
+    port: 6379
+    timeout: 3000ms
+    lettuce:
+      pool:
+        max-active: 8   # 최대 커넥션 수
+        max-idle: 8     # 최대 유휴 커넥션 수
+        min-idle: 2     # 최소 유휴 커넥션 수
+        max-wait: -1ms  # 커넥션 대기 시간 (-1: 무제한)
+
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: admin
+    password: admin1234
+    publisher-confirm-type: correlated
+    publisher-returns: true
+
+  cloud:
+    aws:
+      credentials:
+        access-key: local-dummy
+        secret-key: local-dummy
+      s3:
+        bucket: local-dummy-bucket
+      region:
+        static: ap-northeast-2
+      stack:
+        auto: false
+
+jwt:
+  header: Authorization
+  # [보안] 로컬 테스트용 시크릿 키 (32자 이상 권장)
+  secret: local_development_secret_key_32_chars_minimum
+
+file:
+  upload:
+    # [보안] 경로 조작 공격을 방지하기 위해 절대 경로 또는 지정된 하위 폴더 사용
+    directory: uploads
+
+management:
+  endpoints:
+    web:
+      base-path: /actuator
+      exposure:
+        # [보안] metrics는 민감 정보를 포함할 수 있으므로 로컬에서도 필요한 것만 노출
+        include: health, info, prometheus 
+  endpoint:
+    health:
+      # [보안] 상세 정보는 인증된 사용자에게만 표시하도록 변경 가능
+      show-details: when_authorized 
+
+slack:
+  webhook:
+    url: hooks.slack.com
+    enabled: true
+
+logging:
+  level:
+    root: info
+    org.hibernate.SQL: info
+    # [보안] 디버그 로그에는 민감 정보가 찍힐 수 있으므로 주의
+    com.project.shop: info 

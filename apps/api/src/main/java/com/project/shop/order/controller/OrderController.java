@@ -1,0 +1,67 @@
+package com.project.shop.order.controller;
+
+import com.project.shop.order.controller.request.OrderCreateRequest;
+import com.project.shop.order.controller.request.PayCancelRequest;
+import com.project.shop.order.controller.response.OrderPageResponse;
+import com.project.shop.order.controller.response.OrderResponse;
+import com.project.shop.order.domain.MerchantId;
+import com.project.shop.order.service.OrderService;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+
+import jakarta.validation.Valid;
+import java.util.List;
+import java.util.UUID;
+
+@RestController
+@RequiredArgsConstructor
+@RequestMapping("/api")
+public class OrderController {
+
+    private final OrderService orderService;
+
+    // MerchantID UUID 생성
+    @GetMapping("/merchantId")
+    @ResponseStatus(HttpStatus.CREATED)
+    public MerchantId merchantIdCreate() {
+        return MerchantId.builder().merchantId(UUID.randomUUID()).build();
+    }
+
+    // 주문 생성
+    @PostMapping("/orders")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasAnyRole('ROLE_USER','ROLE_SELLER','ROLE_ADMIN')")
+    public void orderCreate(@RequestBody @Valid OrderCreateRequest orderCreateRequest) {
+        orderService.cartOrder(orderCreateRequest);
+    }
+
+    // 주문 전체 조회
+    @GetMapping("/orders")
+    @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasAnyRole('ROLE_USER','ROLE_SELLER','ROLE_ADMIN')")
+    public List<OrderPageResponse> orderFindMember(@PageableDefault(sort = "id", direction = Sort.Direction.DESC) Pageable pageable) {
+        return orderService.orderFindMember(pageable);
+    }
+
+    // 주문 단건 조회
+    @GetMapping("/orders/{orderId}")
+    @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasAnyRole('ROLE_USER','ROLE_SELLER','ROLE_ADMIN')")
+    public OrderResponse orderFindOne(@PathVariable("orderId") Long orderId) {
+        return orderService.orderFindOne(orderId);
+    }
+
+    // 결제 취소
+    @PostMapping("/payCancel")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasAnyRole('ROLE_USER','ROLE_SELLER','ROLE_ADMIN')")
+    public void payCancel(@RequestBody PayCancelRequest payCancelRequest) {
+        orderService.payCancel(payCancelRequest);
+    }
+}
