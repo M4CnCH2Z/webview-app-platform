@@ -3,7 +3,7 @@ import axios from 'axios';
 // 1. 인스턴스 설정 보안화
 const api = axios.create({
     // 환경 변수에서 가져오며, 없을 경우를 대비한 기본값 설정
-    baseURL: process.env.REACT_APP_API_URL || 'http://localhost:8080/api',
+    baseURL: process.env.REACT_APP_API_URL || '/api',
     headers: {
         'Content-Type': 'application/json',
     },

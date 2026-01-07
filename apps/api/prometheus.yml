@@ -24,7 +24,7 @@ scrape_configs:
     metrics_path: '/actuator/prometheus'  # Spring Actuator Prometheus 엔드포인트
     scrape_interval: 10s                  # 10초마다 수집 (더 자주 수집)
     static_configs:
-      - targets: ['host.docker.internal:8080']  # Docker 내부에서 호스트 접근
+      - targets: ['api:8080']  # Docker 내부 서비스명 접근
         labels:
           application: 'shoppingmall'
           environment: 'local'

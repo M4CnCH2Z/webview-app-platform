@@ -1,0 +1,224 @@
+version: "3.9"
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: shoppingmall-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root1234}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-shoppingmall}
+      MYSQL_USER: ${MYSQL_USER:-shopuser}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-shop1234}
+      TZ: ${TZ:-Asia/Seoul}
+    ports:
+      - "${MYSQL_PORT:-3307}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    networks:
+      - shop-network
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -p${MYSQL_ROOT_PASSWORD:-root1234}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: shoppingmall-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: redis-server --appendonly yes --appendfsync everysec
+    volumes:
+      - redis-data:/data
+    networks:
+      - shop-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: shoppingmall-redis-commander
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8081:8081"
+    networks:
+      - shop-network
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  rabbitmq1:
+    image: rabbitmq:3.12-management-alpine
+    container_name: rabbitmq1
+    hostname: rabbitmq1
+    environment:
+      RABBITMQ_ERLANG_COOKIE: "VQNnQPg9HA5UgI50J+kKl3xsG3S8N8q+lNOyGz14Jyk="
+      RABBITMQ_NODENAME: rabbit@rabbitmq1
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-admin1234}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq1-data:/var/lib/rabbitmq
+    networks:
+      - shop-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq2:
+    image: rabbitmq:3.12-management-alpine
+    container_name: rabbitmq2
+    hostname: rabbitmq2
+    environment:
+      RABBITMQ_ERLANG_COOKIE: "VQNnQPg9HA5UgI50J+kKl3xsG3S8N8q+lNOyGz14Jyk="
+      RABBITMQ_NODENAME: rabbit@rabbitmq2
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-admin1234}
+    depends_on:
+      - rabbitmq1
+    volumes:
+      - rabbitmq2-data:/var/lib/rabbitmq
+    networks:
+      - shop-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq3:
+    image: rabbitmq:3.12-management-alpine
+    container_name: rabbitmq3
+    hostname: rabbitmq3
+    environment:
+      RABBITMQ_ERLANG_COOKIE: "VQNnQPg9HA5UgI50J+kKl3xsG3S8N8q+lNOyGz14Jyk="
+      RABBITMQ_NODENAME: rabbit@rabbitmq3
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-admin1234}
+    depends_on:
+      - rabbitmq1
+    volumes:
+      - rabbitmq3-data:/var/lib/rabbitmq
+    networks:
+      - shop-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: shoppingmall-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./apps/api/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+    networks:
+      - shop-network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: shoppingmall-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin1234
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+    networks:
+      - shop-network
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    ports:
+      - "${API_PORT:-8080}:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/shoppingmall?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul
+      SPRING_DATASOURCE_USERNAME: ${MYSQL_USER:-shopuser}
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:-shop1234}
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PORT: 6379
+      SPRING_RABBITMQ_HOST: rabbitmq1
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER:-admin}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS:-admin1234}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq1:
+        condition: service_healthy
+    networks:
+      - shop-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      args:
+        REACT_APP_API_URL: /api
+    ports:
+      - "${WEB_PORT:-3000}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - shop-network
+
+volumes:
+  mysql-data:
+    driver: local
+  redis-data:
+    driver: local
+  rabbitmq1-data:
+    driver: local
+  rabbitmq2-data:
+    driver: local
+  rabbitmq3-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+
+networks:
+  shop-network:
+    driver: bridge

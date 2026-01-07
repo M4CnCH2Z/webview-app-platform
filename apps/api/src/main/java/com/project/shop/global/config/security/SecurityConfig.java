@@ -85,6 +85,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/members/signup", "/api/members/exist", "/api/members/login").permitAll()
                 .requestMatchers("/api/goods", "/api/goods/**", "/api/categories", "/api/categories/**").permitAll()
                 .requestMatchers("/api/redis/test/**").permitAll()
+                .requestMatchers("/actuator/health", "/actuator/prometheus").permitAll()
                 .requestMatchers(PERMIT_URL_ARRAY).permitAll()
                 
                 // 그 외 모든 요청은 인증 필요
