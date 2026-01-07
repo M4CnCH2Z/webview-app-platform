@@ -39,6 +39,10 @@
 - 컨테이너 환경은 서비스명으로 통신합니다 (예: mysql, redis, rabbitmq1, api).
 - 웹은 기본적으로 `/api` 상대경로를 사용합니다.
 
+## 골든 이미지 (ECR)
+- 위치: `infra/golden/`
+- 문서: `infra/golden/README.md`
+
 ## 브릿지 계약
 - 메시지: `{ id, version, type, payload }` → `{ id, ok, payload?, error? }`
 - Capabilities: `capabilities.request` -> `{ appVersion, bridgeVersion, supported[] }`

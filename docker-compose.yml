@@ -126,7 +126,7 @@ services:
     image: prom/prometheus:latest
     container_name: shoppingmall-prometheus
     ports:
-      - "9090:9090"
+      - "9091:9090"
     volumes:
       - ./apps/api/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus-data:/prometheus
@@ -161,6 +161,9 @@ services:
     build:
       context: ./apps/api
       dockerfile: Dockerfile
+      args:
+        ECR_REGISTRY: ${ECR_REGISTRY:-763479270202.dkr.ecr.ap-northeast-2.amazonaws.com}
+        GOLDEN_TAG: ${GOLDEN_TAG:-1.0.0}
     ports:
       - "${API_PORT:-8080}:8080"
     environment:
@@ -194,9 +197,11 @@ services:
       context: ./apps/web
       dockerfile: Dockerfile
       args:
+        ECR_REGISTRY: ${ECR_REGISTRY:-763479270202.dkr.ecr.ap-northeast-2.amazonaws.com}
+        GOLDEN_TAG: ${GOLDEN_TAG:-1.0.0}
         REACT_APP_API_URL: /api
     ports:
-      - "${WEB_PORT:-3000}:80"
+      - "${WEB_PORT:-3000}:8080"
     depends_on:
       api:
         condition: service_healthy

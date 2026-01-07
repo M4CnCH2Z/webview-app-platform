@@ -55,6 +55,10 @@ Monorepo for a WebView-hosted Android app, React web frontend and Spring Boot AP
 - Container networking uses service names (mysql, redis, rabbitmq1, api).
 - The web app uses relative `/api` by default.
 
+## Golden images (ECR)
+- Location: `infra/golden/`
+- Docs: `infra/golden/README.md`
+
 ## Bridge Contract (contract-first)
 - Message: `request { id, version, type, payload }` → `response { id, ok, payload?, error? }`
 - Capabilities: `capabilities.request` → `{ appVersion, bridgeVersion, supported[] }`

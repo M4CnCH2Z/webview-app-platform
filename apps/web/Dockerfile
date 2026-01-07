@@ -9,8 +9,10 @@ ARG REACT_APP_API_URL=/api
 ENV REACT_APP_API_URL=${REACT_APP_API_URL}
 RUN npm run build
 
-FROM nginx:1.25-alpine
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=builder /app/build /usr/share/nginx/html
-EXPOSE 80
+ARG ECR_REGISTRY=763479270202.dkr.ecr.ap-northeast-2.amazonaws.com
+ARG GOLDEN_TAG=1.0.0
+FROM ${ECR_REGISTRY}/golden-nginx:${GOLDEN_TAG}
+COPY --chown=10001:10001 nginx.conf /etc/nginx/conf.d/default.conf
+COPY --chown=10001:10001 --from=builder /app/build /usr/share/nginx/html
+EXPOSE 8080
 CMD ["nginx", "-g", "daemon off;"]
