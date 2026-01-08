@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-shopping-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: my-api
+  template:
+    metadata:
+      labels:
+        app: my-api
+    spec:
+      containers:
+      - name: my-api
+        image: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-api:latest
+        #image: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-api:64126e535ff53dfcbfa92512ea91c330afe40296
+	ports:
+        - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-api-service
+spec:
+  selector:
+    app: my-api
+  ports:
+    - port: 80
+      targetPort: 8080
