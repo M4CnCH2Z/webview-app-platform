@@ -7,8 +7,8 @@ WORKDIR /app
 COPY gradlew gradlew
 COPY gradle gradle
 COPY build.gradle settings.gradle ./
-#COPY src src
-COPY apps/api/src src
+
+COPY src src
 
 
 RUN chmod +x gradlew
