@@ -21,7 +21,7 @@ spec:
       - name: my-web
         image: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-web:latest
         ports:
-        - containerPort: 8080
+        - containerPort: 80
         env:
         - name: LOGGING_FILE_PATH
           value: /app/logs
@@ -60,4 +60,4 @@ spec:
     app: web
   ports:
     - port: 80
-      targetPort: 8080
+      targetPort: 80
