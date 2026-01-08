@@ -7,7 +7,9 @@ WORKDIR /app
 COPY gradlew gradlew
 COPY gradle gradle
 COPY build.gradle settings.gradle ./
-COPY src src
+#COPY src src
+COPY apps/api/src src
+
 
 RUN chmod +x gradlew
 ENV GRADLE_OPTS="-Dorg.gradle.daemon=false -Dorg.gradle.vfs.watch=false"
