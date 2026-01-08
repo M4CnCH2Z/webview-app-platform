@@ -16,7 +16,7 @@ spec:
     path: k8s # api.yaml과 web.yaml이 같이 들어있는 폴더
   destination:
     server: https://kubernetes.default.svc
-    namespace: default
+    namespace: staging
   syncPolicy:
     automated:
       prune: true
