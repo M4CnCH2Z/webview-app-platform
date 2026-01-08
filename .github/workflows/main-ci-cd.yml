@@ -6,7 +6,7 @@ on:
 
 permissions:
   id-token: write
-  contents: read
+  contents: write
 
 env:
   AWS_REGION: ap-northeast-2
@@ -73,3 +73,36 @@ jobs:
             ./apps/web
           docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_WEB }}:${{ github.sha }}
           docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_WEB }}:latest
+
+  update-manifest:
+    needs: [detect-changes, build-api, build-web]
+    if: |
+      always() &&
+      (needs.build-api.result == 'success' || needs.build-web.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update kustomization.yaml
+        run: |
+          cd infra/k8s
+
+          # API 이미지가 빌드되었으면 태그 업데이트
+          if [ "${{ needs.detect-changes.outputs.api }}" == "true" ]; then
+            sed -i "/shoppingmall-api/,/newTag:/ s|newTag:.*|newTag: ${{ github.sha }}|" kustomization.yaml
+          fi
+
+          # Web 이미지가 빌드되었으면 태그 업데이트
+          if [ "${{ needs.detect-changes.outputs.web }}" == "true" ]; then
+            sed -i "/shoppingmall-web/,/newTag:/ s|newTag:.*|newTag: ${{ github.sha }}|" kustomization.yaml
+          fi
+
+          cat kustomization.yaml
+
+      - name: Commit and Push
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add infra/k8s/kustomization.yaml
+          git commit -m "Update image tags to ${{ github.sha }}" || echo "No changes to commit"
+          git push
