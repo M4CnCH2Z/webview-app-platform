@@ -15,9 +15,8 @@ spec:
       containers:
       - name: my-api
         image: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-api:latest
-        #image: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-api:64126e535ff53dfcbfa92512ea91c330afe40296
-	ports:
-        - containerPort: 8080
+        ports:                # <--- image와 같은 라인에 정렬 (8칸 띄움)
+        - containerPort: 8080 # <--- ports 아래로 정렬 (10칸 띄움)
 ---
 apiVersion: v1
 kind: Service
