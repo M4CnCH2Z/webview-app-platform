@@ -4,7 +4,7 @@ metadata:
   name: shoppingmall-web-app
   namespace: cd-system
   annotations:
-    # WEB용 ECR 주소를 감시합니다. 별명은 my-web으로 붙였습니다.
+    # WEB용 ECR 주소를 감시
     argocd-image-updater.argoproj.io/image-list: my-web=763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-web
     argocd-image-updater.argoproj.io/my-web.update-strategy: newest-build
     argocd-image-updater.argoproj.io/write-back-method: argocd
