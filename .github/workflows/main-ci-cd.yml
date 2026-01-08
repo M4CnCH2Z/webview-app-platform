@@ -51,7 +51,8 @@ jobs:
         
       - name: Build and Push API Image
         run: |
-          docker build -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_API }}:${{ github.sha }} -f Dockerfile .
+          # -f 뒤의 경로를 apps/api/Dockerfile로 수정
+          docker build -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_API }}:${{ github.sha }} -f apps/api/Dockerfile .
           docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_API }}:${{ github.sha }}
 
   # 3. Web 빌드 (apps/web 폴더 수정 시에만 실행)
