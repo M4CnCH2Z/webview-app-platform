@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: my-shopping-api
+  namespace: staging  # 네임스페이스 명시
   annotations:
     argocd-image-updater.argoproj.io/image-list: api=763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-api
     argocd-image-updater.argoproj.io/api.update-strategy: latest
@@ -21,6 +22,11 @@ spec:
         image: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-api:latest
         ports:
         - containerPort: 8080
+        env:
+        - name: LOGGING_FILE_PATH
+          value: /tmp
+        - name: LOGGING_FILE_NAME
+          value: /tmp/spring.log
         resources:
           requests:
             cpu: "100m"
@@ -32,7 +38,8 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: my-api-service
+  name: api  
+  namespace: staging
 spec:
   selector:
     app: my-api
