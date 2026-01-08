@@ -2,6 +2,10 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: my-shopping-api
+  annotations:
+    argocd-image-updater.argoproj.io/image-list: api=763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-api
+    argocd-image-updater.argoproj.io/api.update-strategy: latest
+    argocd-image-updater.argoproj.io/write-back-method: git
 spec:
   replicas: 1
   selector:
@@ -15,8 +19,8 @@ spec:
       containers:
       - name: my-api
         image: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-api:latest
-        ports:                # <--- image와 같은 라인에 정렬 (8칸 띄움)
-        - containerPort: 8080 # <--- ports 아래로 정렬 (10칸 띄움)
+        ports:
+        - containerPort: 8080
 ---
 apiVersion: v1
 kind: Service

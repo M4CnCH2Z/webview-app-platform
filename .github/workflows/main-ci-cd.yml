@@ -44,9 +44,12 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
       - name: Build and Push API Image
         run: |
-          # 기준점을 ./apps/api로 설정하여 내부 파일들을 바로 COPY할 수 있게 합니다.
-          docker build -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_API }}:${{ github.sha }} ./apps/api
+          docker build \
+            -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_API }}:${{ github.sha }} \
+            -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_API }}:latest \
+            ./apps/api
           docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_API }}:${{ github.sha }}
+          docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_API }}:latest
 
   build-web:
     needs: detect-changes
@@ -64,6 +67,9 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
       - name: Build and Push Web Image
         run: |
-          # Web 역시 기준점을 ./apps/web으로 설정합니다.
-          docker build -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_WEB }}:${{ github.sha }} ./apps/web
+          docker build \
+            -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_WEB }}:${{ github.sha }} \
+            -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_WEB }}:latest \
+            ./apps/web
           docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_WEB }}:${{ github.sha }}
+          docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_WEB }}:latest
