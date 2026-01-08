@@ -22,30 +22,42 @@ spec:
         image: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-web:latest
         ports:
         - containerPort: 8080
-        # --- [추가된 부분: 로그 에러 해결] ---
         env:
         - name: LOGGING_FILE_PATH
-          value: /tmp
-        - name: LOGGING_FILE_NAME
-          value: /tmp/web.log
-        # ----------------------------------
+          value: /app/logs
+        volumeMounts:
+        # --- [쓰기 권한 에러 해결을 위한 포스트잇 부착] ---
+        - name: nginx-run
+          mountPath: /var/run
+        - name: nginx-cache
+          mountPath: /var/cache/nginx
+        - name: log-dir
+          mountPath: /app/logs
         resources:
           requests:
             cpu: "100m"
-            memory: "128Mi"
+            memory: "256Mi"
           limits:
             cpu: "200m"
-            memory: "256Mi"
+            memory: "512Mi"
+      volumes:
+      # --- [임시 쓰기 공간 정의] ---
+      - name: nginx-run
+        emptyDir: {}
+      - name: nginx-cache
+        emptyDir: {}
+      - name: log-dir
+        emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: web  # Nginx나 다른 서비스에서 'web'으로 호출 가능
+  name: web
   namespace: staging
 spec:
-  type: LoadBalancer 
+  type: LoadBalancer
   selector:
     app: web
   ports:
     - port: 80
-      targetPort: 8080 # 앱 포트 8080과 일치시킴
+      targetPort: 8080

@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: my-shopping-api
-  namespace: staging  # 네임스페이스 명시
+  namespace: staging
   annotations:
     argocd-image-updater.argoproj.io/image-list: api=763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-api
     argocd-image-updater.argoproj.io/api.update-strategy: latest
@@ -23,22 +23,29 @@ spec:
         ports:
         - containerPort: 8080
         env:
+        - name: LOG_DIR
+          value: /app/logs
         - name: LOGGING_FILE_PATH
-          value: /tmp
-        - name: LOGGING_FILE_NAME
-          value: /tmp/spring.log
+          value: /app/logs
+        volumeMounts:
+        # --- [로그 쓰기 권한 에러 해결] ---
+        - name: log-dir
+          mountPath: /app/logs
         resources:
           requests:
             cpu: "100m"
-            memory: "128Mi"
+            memory: "256Mi"
           limits:
             cpu: "200m"
-            memory: "256Mi"
+            memory: "512Mi"
+      volumes:
+      - name: log-dir
+        emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: api  
+  name: api
   namespace: staging
 spec:
   selector:
