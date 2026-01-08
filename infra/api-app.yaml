@@ -7,13 +7,15 @@ metadata:
     # ECR 이미지 자동 감시 및 업데이트 설정
     argocd-image-updater.argoproj.io/image-list: my-api=763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-api
     argocd-image-updater.argoproj.io/my-api.update-strategy: newest-build
-    argocd-image-updater.argoproj.io/write-back-method: argocd
+    argocd-image-updater.argoproj.io/write-back-method: git
+    argocd-image-updater.argoproj.io/my-api.kustomize.image-name: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-api
 spec:
   project: default
   source:
     repoURL: https://github.com/M4CnCH2Z/webview-app-platform.git
     targetRevision: HEAD
     path: infra/k8s  # 실제 api.yaml, web.yaml 설계도가 있는 폴더
+    kustomize: {}
   destination:
     server: https://kubernetes.default.svc
     namespace: staging  # 실제 앱이 배포될 곳
