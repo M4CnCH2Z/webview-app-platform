@@ -25,6 +25,8 @@ spec:
         env:
         - name: LOGGING_FILE_PATH
           value: /app/logs
+        - name: SPRING_PROFILES_ACTIVE
+          value: staging
         volumeMounts:
         # --- [쓰기 권한 에러 해결을 위한 포스트잇 부착] ---
         - name: nginx-run
