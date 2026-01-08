@@ -1,0 +1,61 @@
+name: Build and Push to ECR (Image Updater)
+
+on:
+  push:
+    branches: [ main ]
+
+env:
+  AWS_REGION: ap-northeast-2
+  ECR_WEB: shoppingmall-web
+  ECR_API: shoppingmall-api
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      web: ${{ steps.filter.outputs.web }}
+      api: ${{ steps.filter.outputs.api }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            web: ['apps/web/**']
+            api: ['apps/api/**']
+
+  build-and-push:
+    needs: changes
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [web, api]
+    # 변한 서비스만 실행
+    if: |
+      (matrix:service == 'web' && needs.changes.outputs.web == 'true') ||
+      (matrix:service == 'api' && needs.changes.outputs.api == 'true')
+    
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and Push
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          REPO: ${{ matrix.service == 'web' && env.ECR_WEB || env.ECR_API }}
+          # Dockerfile 위치 지정
+          DOCKERFILE: ${{ matrix.service == 'web' && 'apps/web/Dockerfile' || 'Dockerfile' }}
+          # 컨텍스트 위치 지정
+          CONTEXT: ${{ matrix.service == 'web' && './apps/web' || '.' }}
+        run: |
+          docker build -t $ECR_REGISTRY/$REPO:${{ github.sha }} -f $DOCKERFILE $CONTEXT
+          docker push $ECR_REGISTRY/$REPO:${{ github.sha }}
