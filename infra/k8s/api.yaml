@@ -27,17 +27,35 @@ spec:
           value: /app/logs
         - name: LOGGING_FILE_PATH
           value: /app/logs
+        - name: SPRING_DATASOURCE_URL
+          value: jdbc:mysql://mysql:3306/shoppingmall
+        - name: SPRING_DATASOURCE_USERNAME
+          value: root
+        - name: SPRING_DATASOURCE_PASSWORD
+          value: root1234
         volumeMounts:
-        # --- [로그 쓰기 권한 에러 해결] ---
         - name: log-dir
           mountPath: /app/logs
+        startupProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          failureThreshold: 18
+        livenessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8080
+          periodSeconds: 10
+          failureThreshold: 3
         resources:
           requests:
-            cpu: "100m"
-            memory: "256Mi"
-          limits:
             cpu: "200m"
             memory: "512Mi"
+          limits:
+            cpu: "500m"
+            memory: "1Gi"
       volumes:
       - name: log-dir
         emptyDir: {}
