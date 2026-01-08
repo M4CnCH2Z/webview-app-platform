@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: my-shopping-web
+  namespace: staging
   annotations:
     argocd-image-updater.argoproj.io/image-list: web=763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-web
     argocd-image-updater.argoproj.io/web.update-strategy: latest
@@ -10,17 +11,24 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-      app: my-web
+      app: web
   template:
     metadata:
       labels:
-        app: my-web
+        app: web
     spec:
       containers:
       - name: my-web
         image: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-web:latest
         ports:
         - containerPort: 8080
+        # --- [추가된 부분: 로그 에러 해결] ---
+        env:
+        - name: LOGGING_FILE_PATH
+          value: /tmp
+        - name: LOGGING_FILE_NAME
+          value: /tmp/web.log
+        # ----------------------------------
         resources:
           requests:
             cpu: "100m"
@@ -32,11 +40,12 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: my-web-service
+  name: web  # Nginx나 다른 서비스에서 'web'으로 호출 가능
+  namespace: staging
 spec:
-  type: LoadBalancer # 외부에서 접근 가능하도록 LoadBalancer 타입으로 설정
+  type: LoadBalancer 
   selector:
-    app: my-web
+    app: web
   ports:
     - port: 80
-      targetPort: 80
+      targetPort: 8080 # 앱 포트 8080과 일치시킴
