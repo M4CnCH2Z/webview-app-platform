@@ -4,6 +4,11 @@ on:
   push:
     branches: [ main ]
 
+# OIDC 인증을 위해 반드시 추가해야 하는 권한
+permissions:
+  id-token: write
+  contents: read
+
 env:
   AWS_REGION: ap-northeast-2
   ECR_WEB: shoppingmall-web
@@ -32,18 +37,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      
+      # Access Key 대신 Role을 사용하여 AWS 인증
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: arn:aws:iam::763479270202:role/GitHubActionsECRRole
           aws-region: ${{ env.AWS_REGION }}
+          
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
+        
       - name: Build and Push API Image
         run: |
-          # 루트의 Dockerfile을 사용하여 빌드
           docker build -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_API }}:${{ github.sha }} -f Dockerfile .
           docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_API }}:${{ github.sha }}
 
@@ -54,17 +61,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      
+      # Access Key 대신 Role을 사용하여 AWS 인증
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: arn:aws:iam::763479270202:role/GitHubActionsECRRole
           aws-region: ${{ env.AWS_REGION }}
+          
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
+        
       - name: Build and Push Web Image
         run: |
-          # apps/web 폴더 안의 Dockerfile을 사용하여 빌드
           docker build -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_WEB }}:${{ github.sha }} ./apps/web
           docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_WEB }}:${{ github.sha }}
