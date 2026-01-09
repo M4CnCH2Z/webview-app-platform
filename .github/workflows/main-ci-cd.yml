@@ -39,7 +39,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-region: ${{ env.AWS_REGION }}
-
+          role-to-assume: arn:aws:iam::763479270202:role/GitHubActionsECRRole
 
       - name: Build and Push API Image with Kaniko
         run: |
