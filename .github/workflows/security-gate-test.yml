@@ -19,7 +19,7 @@ on:
 
 jobs:
   decision-evaluate:
-    runs-on: [self-hosted, arc]
+    runs-on: ci-runner
     steps:
       - name: Evaluate security gate decision
         env:
