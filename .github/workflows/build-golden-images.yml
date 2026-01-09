@@ -45,12 +45,11 @@ jobs:
             echo "tag=1.0.0" >> $GITHUB_OUTPUT
           fi
 
+
   build-nginx:
     needs: detect-changes
     if: needs.detect-changes.outputs.nginx == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    container:
-      image: gcr.io/kaniko-project/executor:v1.23.2-debug
+    runs-on: devsecops-runners
     steps:
       - uses: actions/checkout@v4
 
@@ -60,28 +59,20 @@ jobs:
           role-to-assume: arn:aws:iam::763479270202:role/GitHubActionsECRRole
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Setup Kaniko auth
-        run: |
-          mkdir -p /kaniko/.docker
-          echo "{\"credsStore\":\"ecr-login\"}" > /kaniko/.docker/config.json
-
-      - name: Build and Push with Kaniko
-        run: |
-          /kaniko/executor \
-            --context=${{ github.workspace }}/infra/golden/nginx \
-            --dockerfile=${{ github.workspace }}/infra/golden/nginx/Dockerfile \
-            --destination=${{ env.ECR_REGISTRY }}/golden-nginx:${{ needs.detect-changes.outputs.tag }} \
-            --destination=${{ env.ECR_REGISTRY }}/golden-nginx:latest \
-            --cache=true \
-            --cache-repo=${{ env.ECR_REGISTRY }}/golden-nginx/cache \
-            --compressed-caching=false
+      - name: Build and Push Golden Nginx with Kaniko Action
+        uses: aevea/action-kaniko@master
+        with:
+          image: ${{ env.ECR_REGISTRY }}/golden-nginx
+          tag: ${{ needs.detect-changes.outputs.tag }},latest
+          cache: true
+          cache_repo: ${{ env.ECR_REGISTRY }}/golden-nginx/cache
+          build_file: infra/golden/nginx/Dockerfile
+          context: infra/golden/nginx
 
   build-java21:
     needs: detect-changes
     if: needs.detect-changes.outputs.java21 == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    container:
-      image: gcr.io/kaniko-project/executor:v1.23.2-debug
+    runs-on: devsecops-runners
     steps:
       - uses: actions/checkout@v4
 
@@ -91,18 +82,12 @@ jobs:
           role-to-assume: arn:aws:iam::763479270202:role/GitHubActionsECRRole
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Setup Kaniko auth
-        run: |
-          mkdir -p /kaniko/.docker
-          echo "{\"credsStore\":\"ecr-login\"}" > /kaniko/.docker/config.json
-
-      - name: Build and Push with Kaniko
-        run: |
-          /kaniko/executor \
-            --context=${{ github.workspace }}/infra/golden/java21-runtime \
-            --dockerfile=${{ github.workspace }}/infra/golden/java21-runtime/Dockerfile \
-            --destination=${{ env.ECR_REGISTRY }}/golden-java21-runtime:${{ needs.detect-changes.outputs.tag }} \
-            --destination=${{ env.ECR_REGISTRY }}/golden-java21-runtime:latest \
-            --cache=true \
-            --cache-repo=${{ env.ECR_REGISTRY }}/golden-java21-runtime/cache \
-            --compressed-caching=false
+      - name: Build and Push Golden Java21 with Kaniko Action
+        uses: aevea/action-kaniko@master
+        with:
+          image: ${{ env.ECR_REGISTRY }}/golden-java21-runtime
+          tag: ${{ needs.detect-changes.outputs.tag }},latest
+          cache: true
+          cache_repo: ${{ env.ECR_REGISTRY }}/golden-java21-runtime/cache
+          build_file: infra/golden/java21-runtime/Dockerfile
+          context: infra/golden/java21-runtime
