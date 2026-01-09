@@ -55,7 +55,7 @@ jobs:
           sig=$(python3 - <<PY
           import hmac, hashlib
           secret=b"${SG_SECRET}"
-          msg=b"${ts}.POST./v1/decisions/evaluate." + ${body!r}.encode()
+          msg=b"${ts}.POST./v1/decisions/evaluate." + """$body""".encode()
           print(hmac.new(secret, msg, hashlib.sha256).hexdigest())
           PY
           )
