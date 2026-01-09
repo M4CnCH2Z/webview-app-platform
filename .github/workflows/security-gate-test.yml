@@ -1,0 +1,67 @@
+name: security-gate-test
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_id:
+        description: "Release image digest (sha256:<64hex>)"
+        required: true
+      gate:
+        description: "Gate name"
+        default: "PR"
+        required: true
+      env:
+        description: "Environment"
+        default: "pr"
+        required: true
+
+jobs:
+  decision-evaluate:
+    runs-on: [self-hosted, arc]
+    steps:
+      - name: Evaluate security gate decision
+        env:
+          SG_URL: ${{ secrets.SECURITY_GATE_URL }}
+          SG_SECRET: ${{ secrets.SECURITY_GATE_HMAC_SECRET }}
+          SG_RELEASE_ID: ${{ inputs.release_id || secrets.SECURITY_GATE_RELEASE_ID }}
+          SG_GATE: ${{ inputs.gate || 'PR' }}
+          SG_ENV: ${{ inputs.env || 'pr' }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SG_URL}" ] || [ -z "${SG_SECRET}" ]; then
+            echo "Missing SECURITY_GATE_URL or SECURITY_GATE_HMAC_SECRET" >&2
+            exit 1
+          fi
+          if [ -z "${SG_RELEASE_ID}" ]; then
+            echo "Missing release_id input or SECURITY_GATE_RELEASE_ID" >&2
+            exit 1
+          fi
+
+          body=$(cat <<JSON
+          {
+            "release_id":"${SG_RELEASE_ID}",
+            "env":"${SG_ENV}",
+            "gate":"${SG_GATE}",
+            "context":{
+              "repo":"${GITHUB_REPOSITORY}",
+              "commit_sha":"${GITHUB_SHA}",
+              "pr_number":${{ github.event.pull_request.number || 0 }}
+            }
+          }
+          JSON
+          )
+
+          ts=$(date +%s)
+          sig=$(python3 - <<PY
+          import hmac, hashlib
+          secret=b"${SG_SECRET}"
+          msg=b"${ts}.POST./v1/decisions/evaluate." + ${body!r}.encode()
+          print(hmac.new(secret, msg, hashlib.sha256).hexdigest())
+          PY
+          )
+
+          curl -sS -X POST "${SG_URL%/}/v1/decisions/evaluate" \
+            -H "Content-Type: application/json" \
+            -H "X-SG-Timestamp: ${ts}" \
+            -H "X-SG-Signature: ${sig}" \
+            --data-binary "${body}"
