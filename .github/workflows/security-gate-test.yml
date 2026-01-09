@@ -38,18 +38,19 @@ jobs:
             SG_RELEASE_ID="sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
           fi
 
-          body=$(cat <<JSON
-          {
-            "release_id":"${SG_RELEASE_ID}",
-            "env":"${SG_ENV}",
-            "gate":"${SG_GATE}",
-            "context":{
-              "repo":"${GITHUB_REPOSITORY}",
-              commit_sha="${{ github.event.pull_request.head.sha }}"
-              pr_number="${{ github.event.pull_request.number }}"
+          body=$(python3 - <<PY
+          import json
+          print(json.dumps({
+            "release_id": "${SG_RELEASE_ID}",
+            "env": "${SG_ENV}",
+            "gate": "${SG_GATE}",
+            "context": {
+              "repo": "${GITHUB_REPOSITORY}",
+              "commit_sha": "${{ github.event.pull_request.head.sha }}",
+              "pr_number": ${{ github.event.pull_request.number }}
             }
-          }
-          JSON
+          }))
+          PY
           )
 
           ts=$(date +%s)
