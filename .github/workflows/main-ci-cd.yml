@@ -2,7 +2,7 @@ name: Main CI/CD to ECR
 
 on:
   push:
-    branches: [ main, kaniko-migration ]  # TODO: remove kaniko-migration after testing
+    branches: [ main, kaniko-migration ]
 
 permissions:
   id-token: write
@@ -12,6 +12,8 @@ env:
   AWS_REGION: ap-northeast-2
   ECR_WEB: shoppingmall-web
   ECR_API: shoppingmall-api
+  # ⬇️ 1. 여기에 Role ARN을 꼭 적어주세요!
+  AWS_ROLE: arn:aws:iam::763479270202:role/GitHubActionsECRRole
 
 jobs:
   detect-changes:
@@ -31,7 +33,7 @@ jobs:
   build-api:
     needs: detect-changes
     if: needs.detect-changes.outputs.api == 'true'
-    runs-on: ci-runner
+    runs-on: arc-runners
     steps:
       - uses: actions/checkout@v4
 
@@ -39,23 +41,23 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-region: ${{ env.AWS_REGION }}
-          role-to-assume: arn:aws:iam::763479270202:role/GitHubActionsECRRole
+          role-to-assume: ${{ env.AWS_ROLE }}
 
-      - name: Build and Push API Image with Kaniko
-        uses: aevea/action-kaniko@master
+      # ⬇️ 2. ARC에서 Docker 없이 Kaniko를 쓰는 '진짜' 방법 (int128 액션 사용)
+      - name: Build and Push API Image
+        uses: int128/kaniko-action@v1
         with:
-          image: ${{ env.ECR_API }}
-          registry: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com
-          tag: ${{ github.sha }}, latest
-          build_file: apps/api/Dockerfile
+          push: true
           context: apps/api
+          file: apps/api/Dockerfile
+          destination: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/${{ env.ECR_API }}:${{ github.sha }}
           cache: true
-          cache_repo: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/${{ env.ECR_API }}/cache
+          cache-repository: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/${{ env.ECR_API }}/cache
 
   build-web:
     needs: detect-changes
     if: needs.detect-changes.outputs.web == 'true'
-    runs-on: ci-runner
+    runs-on: arc-runners # ⬇️ 3. 여기도 arc-runners로 맞추세요!
     steps:
       - uses: actions/checkout@v4
 
@@ -63,19 +65,17 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-region: ${{ env.AWS_REGION }}
-          role-to-assume: arn:aws:iam::763479270202:role/GitHubActionsECRRole
+          role-to-assume: ${{ env.AWS_ROLE }}
 
-      - name: Build and Push Web Image with Kaniko
-        uses: aevea/action-kaniko@master
+      - name: Build and Push Web Image
+        uses: int128/kaniko-action@v1
         with:
-          image: ${{ env.ECR_WEB }}
-          registry: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com
-          tag: ${{ github.sha }}, latest
-          build_file: apps/web/Dockerfile
+          push: true
           context: apps/web
+          file: apps/web/Dockerfile
+          destination: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/${{ env.ECR_WEB }}:${{ github.sha }}
           cache: true
-          cache_repo: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/${{ env.ECR_WEB }}/cache
-
+          cache-repository: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/${{ env.ECR_WEB }}/cache
 
   update-manifest:
     needs: [detect-changes, build-api, build-web]
@@ -85,23 +85,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Update kustomization.yaml
         run: |
           cd infra/k8s
-
-          # API 이미지가 빌드되었으면 태그 업데이트
           if [ "${{ needs.detect-changes.outputs.api }}" == "true" ]; then
             sed -i "/shoppingmall-api/,/newTag:/ s|newTag:.*|newTag: ${{ github.sha }}|" kustomization.yaml
           fi
-
-          # Web 이미지가 빌드되었으면 태그 업데이트
           if [ "${{ needs.detect-changes.outputs.web }}" == "true" ]; then
             sed -i "/shoppingmall-web/,/newTag:/ s|newTag:.*|newTag: ${{ github.sha }}|" kustomization.yaml
           fi
-
-          cat kustomization.yaml
-
       - name: Commit and Push
         run: |
           git config --global user.name "github-actions[bot]"
