@@ -2,7 +2,7 @@ name: Build Golden Images with Kaniko
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, kaniko-migration ]  # TODO: remove kaniko-migration after testing
     paths:
       - 'infra/golden/**'
   workflow_dispatch:

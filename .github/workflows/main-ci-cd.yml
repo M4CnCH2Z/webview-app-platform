@@ -2,7 +2,7 @@ name: Main CI/CD to ECR
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, kaniko-migration ]  # TODO: remove kaniko-migration after testing
 
 permissions:
   id-token: write
