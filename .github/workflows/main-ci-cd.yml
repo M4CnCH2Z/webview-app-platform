@@ -31,7 +31,7 @@ jobs:
   build-api:
     needs: detect-changes
     if: needs.detect-changes.outputs.api == 'true'
-    runs-on: devsecops-runners
+    runs-on: ci-runner
     steps:
       - uses: actions/checkout@v4
 
@@ -50,13 +50,13 @@ jobs:
           cache_repo: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/${{ env.ECR_API }}/cache
           build_file: apps/api/Dockerfile
           context: apps/api
-          # AWS 인증 정보를 액션이 인식할 수 있게 환경 변수를 전달합니다.
+          # AWS 인증 정보를 액션이 인식할 수 있게 환경 변수를 전달 
           extra_args: --compressed-caching=false
 
   build-web:
     needs: detect-changes
     if: needs.detect-changes.outputs.web == 'true'
-    runs-on: devsecops-runners
+    runs-on: ci-runner
     steps:
       - uses: actions/checkout@v4
 
@@ -77,7 +77,7 @@ jobs:
           context: apps/web
           extra_args: --compressed-caching=false
 
-          
+
   update-manifest:
     needs: [detect-changes, build-api, build-web]
     if: |

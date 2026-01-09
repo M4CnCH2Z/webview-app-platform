@@ -49,7 +49,7 @@ jobs:
   build-nginx:
     needs: detect-changes
     if: needs.detect-changes.outputs.nginx == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: devsecops-runners
+    runs-on: ci-runner
     steps:
       - uses: actions/checkout@v4
 
@@ -72,7 +72,7 @@ jobs:
   build-java21:
     needs: detect-changes
     if: needs.detect-changes.outputs.java21 == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: devsecops-runners
+    runs-on: ci-runner
     steps:
       - uses: actions/checkout@v4
 
