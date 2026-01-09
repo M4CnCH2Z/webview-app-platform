@@ -42,6 +42,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Random;
 
 import static com.project.shop.global.error.ErrorCode.*;
@@ -59,7 +60,7 @@ public class OrderServiceImpl implements OrderService {
     private final MemberRepository memberRepository;
     private final PayCancelRepository payCancelRepository;
     private final RedisCartService redisCartService;
-    private final OrderEventPublisher orderEventPublisher;
+    private final Optional<OrderEventPublisher> orderEventPublisher;
     private final PaymentService paymentService;
     private final PaymentRepository paymentRepository;
 
@@ -73,7 +74,7 @@ public class OrderServiceImpl implements OrderService {
             MemberRepository memberRepository,
             PayCancelRepository payCancelRepository,
             RedisCartService redisCartService,
-            OrderEventPublisher orderEventPublisher,
+            Optional<OrderEventPublisher> orderEventPublisher,
             @Qualifier("tossPaymentService") PaymentService paymentService,
             PaymentRepository paymentRepository
     ) {
@@ -226,7 +227,7 @@ public class OrderServiceImpl implements OrderService {
                 .createdAt(order.getCratedAt())
                 .build();
 
-        orderEventPublisher.publishOrderCreated(event);
+        orderEventPublisher.ifPresent(publisher -> publisher.publishOrderCreated(event));
     }
 
     // 주문 조회

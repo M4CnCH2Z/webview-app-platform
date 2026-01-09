@@ -1,0 +1,89 @@
+server:
+  address: 0.0.0.0
+  port: 8080
+  server-header: " "
+  servlet:
+    session:
+      timeout: 30m
+      cookie:
+        http-only: true
+        same-site: strict
+  tomcat:
+    error:
+      include-stacktrace: never
+      include-message: false
+      include-binding-errors: never
+
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://mysql:3306/shoppingmall}
+    username: ${SPRING_DATASOURCE_USERNAME:root}
+    password: ${SPRING_DATASOURCE_PASSWORD:root1234}
+
+  main:
+    allow-bean-definition-overriding: true
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        format_sql: false
+        show_sql: false
+        default_batch_fetch_size: 100
+    database: mysql
+    open-in-view: false
+
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:redis}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      timeout: 3000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 2
+          max-wait: -1ms
+
+  cloud:
+    aws:
+      credentials:
+        access-key: ${AWS_ACCESS_KEY}
+        secret-key: ${AWS_SECRET_KEY}
+      s3:
+        bucket: ${AWS_S3_BUCKET}
+      region:
+        static: ap-northeast-2
+      stack:
+        auto: false
+
+jwt:
+  header: Authorization
+  secret: ${JWT_SECRET}
+
+file:
+  upload:
+    directory: /app/uploads
+
+management:
+  endpoints:
+    web:
+      base-path: /actuator
+      exposure:
+        include: health, info, prometheus
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    root: info
+    org.hibernate.SQL: info
+    com.project.shop: info

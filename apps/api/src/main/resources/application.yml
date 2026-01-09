@@ -3,7 +3,6 @@ spring:
     active: local  # 기본 프로파일을 local로 설정
   autoconfigure:
     exclude:
-      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
       - org.springframework.boot.autoconfigure.amqp.RabbitAutoConfiguration
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
