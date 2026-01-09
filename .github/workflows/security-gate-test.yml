@@ -1,6 +1,8 @@
 name: security-gate-test
 
 on:
+  pull_request:
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
     inputs:
       release_id:
@@ -17,7 +19,7 @@ on:
 
 jobs:
   decision-evaluate:
-    runs-on: ci-runner
+    runs-on: [self-hosted, arc]
     steps:
       - name: Evaluate security gate decision
         env:
@@ -44,8 +46,8 @@ jobs:
             "gate":"${SG_GATE}",
             "context":{
               "repo":"${GITHUB_REPOSITORY}",
-              "commit_sha":"${GITHUB_SHA}",
-              "pr_number":${{ github.event.pull_request.number || 0 }}
+              commit_sha="${{ github.event.pull_request.head.sha }}"
+              pr_number="${{ github.event.pull_request.number }}"
             }
           }
           JSON
@@ -54,8 +56,8 @@ jobs:
           ts=$(date +%s)
           sig=$(python3 - <<PY
           import hmac, hashlib
-          secret=b"${SG_SECRET}"
-          msg=b"${ts}.POST./v1/decisions/evaluate." + """$body""".encode()
+          secret=b"$SG_SECRET"
+          msg=b"$ts.POST./v1/decisions/evaluate." + """$body""".encode()
           print(hmac.new(secret, msg, hashlib.sha256).hexdigest())
           PY
           )
