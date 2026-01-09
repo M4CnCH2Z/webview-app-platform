@@ -56,8 +56,9 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
+          role-to-assume: arn:aws:iam::763479270202:role/GitHubActionsECRRole
           aws-region: ${{ env.AWS_REGION }}
-      
+
       - name: Build and Push Golden Nginx with Kaniko
         run: |
           mkdir -p ~/.docker
@@ -81,8 +82,8 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
+          role-to-assume: arn:aws:iam::763479270202:role/GitHubActionsECRRole
           aws-region: ${{ env.AWS_REGION }}
-   
 
       - name: Build and Push Golden Java21 with Kaniko
         run: |

@@ -42,20 +42,15 @@ jobs:
           role-to-assume: arn:aws:iam::763479270202:role/GitHubActionsECRRole
 
       - name: Build and Push API Image with Kaniko
-        run: |
-          # Kaniko가 ECR에 로그인할 수 있도록 인증 정보를 생성합니다.
-          mkdir -p ~/.docker
-          echo '{"credsStore":"ecr-login"}' > ~/.docker/config.json
-
-          # Kaniko 실행기를 직접 호출합니다.
-          /kaniko/executor \
-            --context "${{ github.workspace }}/apps/api" \
-            --dockerfile "${{ github.workspace }}/apps/api/Dockerfile" \
-            --destination "763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/${{ env.ECR_API }}:${{ github.sha }}" \
-            --destination "763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/${{ env.ECR_API }}:latest" \
-            --cache=true \
-            --cache-repo="763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/${{ env.ECR_API }}/cache" \
-            --compressed-caching=false
+        uses: aevea/action-kaniko@master
+        with:
+          image: ${{ env.ECR_API }}
+          registry: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com
+          tag: ${{ github.sha }}, latest
+          build_file: apps/api/Dockerfile
+          context: apps/api
+          cache: true
+          cache_repo: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/${{ env.ECR_API }}/cache
 
   build-web:
     needs: detect-changes
@@ -68,21 +63,18 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-region: ${{ env.AWS_REGION }}
-  
+          role-to-assume: arn:aws:iam::763479270202:role/GitHubActionsECRRole
 
       - name: Build and Push Web Image with Kaniko
-        run: |
-          mkdir -p ~/.docker
-          echo '{"credsStore":"ecr-login"}' > ~/.docker/config.json
-
-          /kaniko/executor \
-            --context "${{ github.workspace }}/apps/web" \
-            --dockerfile "${{ github.workspace }}/apps/web/Dockerfile" \
-            --destination "763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/${{ env.ECR_WEB }}:${{ github.sha }}" \
-            --destination "763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/${{ env.ECR_WEB }}:latest" \
-            --cache=true \
-            --cache-repo="763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/${{ env.ECR_WEB }}/cache" \
-            --compressed-caching=false
+        uses: aevea/action-kaniko@master
+        with:
+          image: ${{ env.ECR_WEB }}
+          registry: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com
+          tag: ${{ github.sha }}, latest
+          build_file: apps/web/Dockerfile
+          context: apps/web
+          cache: true
+          cache_repo: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/${{ env.ECR_WEB }}/cache
 
 
   update-manifest:
