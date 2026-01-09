@@ -12,8 +12,7 @@ env:
   AWS_REGION: ap-northeast-2
   ECR_WEB: shoppingmall-web
   ECR_API: shoppingmall-api
-  # ⬇️ 1. 여기에 Role ARN을 꼭 적어주세요!
-  AWS_ROLE: arn:aws:iam::763479270202:role/GitHubActionsECRRole
+  arn:aws:iam::763479270202:role/GitHubActionsECRRole
 
 jobs:
   detect-changes:
