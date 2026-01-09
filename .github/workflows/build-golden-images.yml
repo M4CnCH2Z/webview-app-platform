@@ -59,15 +59,18 @@ jobs:
           role-to-assume: arn:aws:iam::763479270202:role/GitHubActionsECRRole
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Build and Push Golden Nginx with Kaniko Action
-        uses: aevea/action-kaniko@master
-        with:
-          image: ${{ env.ECR_REGISTRY }}/golden-nginx
-          tag: ${{ needs.detect-changes.outputs.tag }},latest
-          cache: true
-          cache_repo: ${{ env.ECR_REGISTRY }}/golden-nginx/cache
-          build_file: infra/golden/nginx/Dockerfile
-          context: infra/golden/nginx
+      - name: Build and Push Golden Nginx with Kaniko
+        run: |
+          mkdir -p ~/.docker
+          echo '{"credsStore":"ecr-login"}' > ~/.docker/config.json
+
+          /kaniko/executor \
+            --context "${{ github.workspace }}/infra/golden/nginx" \
+            --dockerfile "${{ github.workspace }}/infra/golden/nginx/Dockerfile" \
+            --destination "${{ env.ECR_REGISTRY }}/golden-nginx:${{ needs.detect-changes.outputs.tag }}" \
+            --destination "${{ env.ECR_REGISTRY }}/golden-nginx:latest" \
+            --cache=true \
+            --cache-repo="${{ env.ECR_REGISTRY }}/golden-nginx/cache"
 
   build-java21:
     needs: detect-changes
@@ -82,12 +85,15 @@ jobs:
           role-to-assume: arn:aws:iam::763479270202:role/GitHubActionsECRRole
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Build and Push Golden Java21 with Kaniko Action
-        uses: aevea/action-kaniko@master
-        with:
-          image: ${{ env.ECR_REGISTRY }}/golden-java21-runtime
-          tag: ${{ needs.detect-changes.outputs.tag }},latest
-          cache: true
-          cache_repo: ${{ env.ECR_REGISTRY }}/golden-java21-runtime/cache
-          build_file: infra/golden/java21-runtime/Dockerfile
-          context: infra/golden/java21-runtime
+      - name: Build and Push Golden Java21 with Kaniko
+        run: |
+          mkdir -p ~/.docker
+          echo '{"credsStore":"ecr-login"}' > ~/.docker/config.json
+
+          /kaniko/executor \
+            --context "${{ github.workspace }}/infra/golden/java21-runtime" \
+            --dockerfile "${{ github.workspace }}/infra/golden/java21-runtime/Dockerfile" \
+            --destination "${{ env.ECR_REGISTRY }}/golden-java21-runtime:${{ needs.detect-changes.outputs.tag }}" \
+            --destination "${{ env.ECR_REGISTRY }}/golden-java21-runtime:latest" \
+            --cache=true \
+            --cache-repo="${{ env.ECR_REGISTRY }}/golden-java21-runtime/cache"
