@@ -51,7 +51,6 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: gcr.io/kaniko-project/executor:v1.23.2-debug
-      options: --user root
     steps:
       - uses: actions/checkout@v4
 
@@ -83,7 +82,6 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: gcr.io/kaniko-project/executor:v1.23.2-debug
-      options: --user root
     steps:
       - uses: actions/checkout@v4
 
