@@ -38,8 +38,8 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
-          role-to-assume: arn:aws:iam::763479270202:role/GitHubActionsECRRole
           aws-region: ${{ env.AWS_REGION }}
+
 
       - name: Build and Push API Image with Kaniko
         run: |
@@ -67,8 +67,8 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
-          role-to-assume: arn:aws:iam::763479270202:role/GitHubActionsECRRole
           aws-region: ${{ env.AWS_REGION }}
+  
 
       - name: Build and Push Web Image with Kaniko
         run: |
