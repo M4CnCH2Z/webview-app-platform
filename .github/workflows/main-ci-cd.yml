@@ -16,7 +16,7 @@ env:
 
 jobs:
   detect-changes:
-    runs-on: arc-runners
+    runs-on: ci-runner
     outputs:
       web: ${{ steps.filter.outputs.web }}
       api: ${{ steps.filter.outputs.api }}
@@ -32,7 +32,7 @@ jobs:
   build-api:
     needs: detect-changes
     if: needs.detect-changes.outputs.api == 'true'
-    runs-on: arc-runners
+    runs-on: ci-runner
     steps:
       - uses: actions/checkout@v4
 
@@ -55,7 +55,7 @@ jobs:
   build-web:
     needs: detect-changes
     if: needs.detect-changes.outputs.web == 'true'
-    runs-on: arc-runners 
+    runs-on: ci-runner 
     steps:
       - uses: actions/checkout@v4
 
