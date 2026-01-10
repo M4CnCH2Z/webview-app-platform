@@ -16,7 +16,7 @@ env:
 
 jobs:
   detect-changes:
-    runs-on: ci-runner
+    runs-on: ubuntu-latest
     outputs:
       web: ${{ steps.filter.outputs.web }}
       api: ${{ steps.filter.outputs.api }}
@@ -32,7 +32,7 @@ jobs:
   build-api:
     needs: detect-changes
     if: needs.detect-changes.outputs.api == 'true'
-    runs-on: ci-runner
+    runs-on: [self-hosted, ci-runner]
     steps:
       - uses: actions/checkout@v4
 
@@ -42,24 +42,27 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ env.AWS_ROLE }}
 
-      - name: Download Kaniko executor
+      - name: Create Kaniko Config
         run: |
-          wget -O /tmp/executor https://github.com/GoogleContainerTools/kaniko/releases/download/v1.24.0/executor-linux-amd64
-          chmod +x /tmp/executor
+          mkdir -p /home/runner/.docker
+          echo '{"credsStore":"ecr-login"}' > /home/runner/.docker/config.json
 
-      - name: Build and Push API Image with Kaniko
+      - name: Build and Push with Kaniko
+        env:
+          DOCKER_CONFIG: /home/runner/.docker
         run: |
-          /tmp/executor \
-            --context=${{ github.workspace }}/apps/api \
-            --dockerfile=${{ github.workspace }}/apps/api/Dockerfile \
-            --destination=763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/${{ env.ECR_API }}:${{ github.sha }} \
+          kaniko \
+            --context "${{ github.workspace }}/apps/api" \
+            --dockerfile "${{ github.workspace }}/apps/api/Dockerfile" \
+            --destination "763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/${{ env.ECR_API }}:${{ github.sha }}" \
+            --destination "763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/${{ env.ECR_API }}:latest" \
             --cache=true \
-            --cache-repo=763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/${{ env.ECR_API }}/cache
+            --cache-repo "763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/${{ env.ECR_API }}/cache"
 
   build-web:
     needs: detect-changes
     if: needs.detect-changes.outputs.web == 'true'
-    runs-on: ci-runner 
+    runs-on: [self-hosted, ci-runner]
     steps:
       - uses: actions/checkout@v4
 
@@ -69,27 +72,30 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ env.AWS_ROLE }}
 
-      - name: Download Kaniko executor
+      - name: Create Kaniko Config
         run: |
-          wget -O /tmp/executor https://github.com/GoogleContainerTools/kaniko/releases/download/v1.24.0/executor-linux-amd64
-          chmod +x /tmp/executor
+          mkdir -p /home/runner/.docker
+          echo '{"credsStore":"ecr-login"}' > /home/runner/.docker/config.json
 
-      - name: Build and Push Web Image with Kaniko
+      - name: Build and Push with Kaniko
+        env:
+          DOCKER_CONFIG: /home/runner/.docker
         run: |
-          /tmp/executor \
-            --context=${{ github.workspace }}/apps/web \
-            --dockerfile=${{ github.workspace }}/apps/web/Dockerfile \
-            --destination=763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/${{ env.ECR_WEB }}:${{ github.sha }} \
+          kaniko \
+            --context "${{ github.workspace }}/apps/web" \
+            --dockerfile "${{ github.workspace }}/apps/web/Dockerfile" \
+            --destination "763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/${{ env.ECR_WEB }}:${{ github.sha }}" \
+            --destination "763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/${{ env.ECR_WEB }}:latest" \
             --cache=true \
-            --cache-repo=763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/${{ env.ECR_WEB }}/cache
+            --cache-repo "763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/${{ env.ECR_WEB }}/cache"
+
 
   update-manifest:
     needs: [detect-changes, build-api, build-web]
     if: |
       always() &&
       !cancelled() &&
-      (needs.build-api.result == 'success' || needs.build-api.result == 'skipped') &&
-      (needs.build-web.result == 'success' || needs.build-web.result == 'skipped') &&
+      !failed() &&
       (needs.build-api.result == 'success' || needs.build-web.result == 'success')
     runs-on: ubuntu-latest
     steps:
