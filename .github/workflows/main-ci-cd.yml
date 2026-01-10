@@ -32,7 +32,7 @@ jobs:
   build-api:
     needs: detect-changes
     if: needs.detect-changes.outputs.api == 'true'
-    runs-on: [self-hosted, ci-runner]
+    runs-on: ci-runner
     steps:
       - uses: actions/checkout@v4
 
@@ -62,7 +62,7 @@ jobs:
   build-web:
     needs: detect-changes
     if: needs.detect-changes.outputs.web == 'true'
-    runs-on: [self-hosted, ci-runner]
+    runs-on: ci-runner
     steps:
       - uses: actions/checkout@v4
 
