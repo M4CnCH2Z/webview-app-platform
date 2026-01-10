@@ -95,7 +95,6 @@ jobs:
     if: |
       always() &&
       !cancelled() &&
-      !failed() &&
       (needs.build-api.result == 'success' || needs.build-web.result == 'success')
     runs-on: ubuntu-latest
     steps:
