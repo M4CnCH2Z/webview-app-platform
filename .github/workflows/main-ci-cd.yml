@@ -42,11 +42,6 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ env.AWS_ROLE }}
 
-      - name: Login to Amazon ECR
-        run: |
-          aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
-          docker login --username AWS --password-stdin 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com
-
       - name: Build and Push API Image with Kaniko
         uses: docker://gcr.io/kaniko-project/executor:v1.24.0
         with:
@@ -69,11 +64,6 @@ jobs:
         with:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ env.AWS_ROLE }}
-
-      - name: Login to Amazon ECR
-        run: |
-          aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
-          docker login --username AWS --password-stdin 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com
 
       - name: Build and Push Web Image with Kaniko
         uses: docker://gcr.io/kaniko-project/executor:v1.24.0
