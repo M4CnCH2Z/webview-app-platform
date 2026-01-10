@@ -12,11 +12,11 @@ env:
   AWS_REGION: ap-northeast-2
   ECR_WEB: shoppingmall-web
   ECR_API: shoppingmall-api
-  arn:aws:iam::763479270202:role/GitHubActionsECRRole
+  AWS_ROLE: arn:aws:iam::763479270202:role/GitHubActionsECRRole
 
 jobs:
   detect-changes:
-    runs-on: ubuntu-latest
+    runs-on: arc-runners
     outputs:
       web: ${{ steps.filter.outputs.web }}
       api: ${{ steps.filter.outputs.api }}
@@ -42,7 +42,6 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ env.AWS_ROLE }}
 
-      # ⬇️ 2. ARC에서 Docker 없이 Kaniko를 쓰는 '진짜' 방법 (int128 액션 사용)
       - name: Build and Push API Image
         uses: int128/kaniko-action@v1
         with:
@@ -56,7 +55,7 @@ jobs:
   build-web:
     needs: detect-changes
     if: needs.detect-changes.outputs.web == 'true'
-    runs-on: arc-runners # ⬇️ 3. 여기도 arc-runners로 맞추세요!
+    runs-on: arc-runners 
     steps:
       - uses: actions/checkout@v4
 
@@ -80,6 +79,9 @@ jobs:
     needs: [detect-changes, build-api, build-web]
     if: |
       always() &&
+      !cancelled() &&
+      (needs.build-api.result == 'success' || needs.build-api.result == 'skipped') &&
+      (needs.build-web.result == 'success' || needs.build-web.result == 'skipped') &&
       (needs.build-api.result == 'success' || needs.build-web.result == 'success')
     runs-on: ubuntu-latest
     steps:
