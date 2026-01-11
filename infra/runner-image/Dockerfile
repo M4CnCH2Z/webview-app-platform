@@ -20,5 +20,8 @@ RUN java -version && sonar-scanner --version
 # ARC는 runner 유저로 실행하는 게 정석
 USER runner
 
-# ✅ 이게 핵심: 러너 프로세스를 시작해야 컨테이너가 안 죽음
-ENTRYPOINT ["/home/runner/run.sh"]
+# 디버깅용: 5분만 살아있게 (확인 끝나면 삭제)
+ENTRYPOINT ["bash","-lc","echo 'debug sleep'; sleep 300"]
+
+# 이게 핵심: 러너 프로세스를 시작해야 컨테이너가 안 죽음
+#ENTRYPOINT ["/home/runner/run.sh"]
