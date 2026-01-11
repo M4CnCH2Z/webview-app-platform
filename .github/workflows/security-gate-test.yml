@@ -28,6 +28,9 @@ jobs:
           SG_RELEASE_ID: ${{ inputs.release_id || secrets.SECURITY_GATE_RELEASE_ID }}
           SG_GATE: ${{ inputs.gate || 'PR' }}
           SG_ENV: ${{ inputs.env || 'pr' }}
+          SG_REPO: ${{ github.repository }}
+          SG_COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          SG_PR_NUMBER: ${{ github.event.pull_request.number || 0 }}
         run: |
           set -euo pipefail
           if [ -z "${SG_URL}" ] || [ -z "${SG_SECRET}" ]; then
@@ -38,6 +41,14 @@ jobs:
             SG_RELEASE_ID="sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
           fi
 
+          echo "SG_URL=${SG_URL}"
+          echo "SG_REPO=${SG_REPO}"
+          echo "SG_COMMIT_SHA=${SG_COMMIT_SHA}"
+          echo "SG_PR_NUMBER=${SG_PR_NUMBER}"
+          echo "SG_RELEASE_ID=${SG_RELEASE_ID}"
+          echo "SG_GATE=${SG_GATE}"
+          echo "SG_ENV=${SG_ENV}"
+
           body=$(python3 - <<PY
           import json
           print(json.dumps({
@@ -45,13 +56,15 @@ jobs:
             "env": "${SG_ENV}",
             "gate": "${SG_GATE}",
             "context": {
-              "repo": "${GITHUB_REPOSITORY}",
-              "commit_sha": "${{ github.event.pull_request.head.sha }}",
-              "pr_number": ${{ github.event.pull_request.number }}
+              "repo": "${SG_REPO}",
+              "commit_sha": "${SG_COMMIT_SHA}",
+              "pr_number": ${SG_PR_NUMBER}
             }
           }))
           PY
           )
+
+          echo "Request body: ${body}"
 
           ts=$(date +%s)
           sig=$(python3 - <<PY
@@ -62,8 +75,10 @@ jobs:
           PY
           )
 
-          curl -sS -X POST "${SG_URL%/}/v1/decisions/evaluate" \
+          response=$(curl -sS -w "\nHTTP_STATUS:%{http_code}\n" -X POST "${SG_URL%/}/v1/decisions/evaluate" \
             -H "Content-Type: application/json" \
             -H "X-SG-Timestamp: ${ts}" \
             -H "X-SG-Signature: ${sig}" \
-            --data-binary "${body}"
+            --data-binary "${body}")
+
+          echo "${response}"
