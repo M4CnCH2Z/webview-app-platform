@@ -1,4 +1,5 @@
-FROM ghcr.io/actions/actions-runner:2.316.0
+# ✅ 중요: deprecated 안 걸리게 최신 runner 사용
+FROM ghcr.io/actions/actions-runner:latest
 
 USER root
 
@@ -7,6 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openjdk-17-jre-headless \
   && rm -rf /var/lib/apt/lists/*
 
+# sonar-scanner 설치 (버전 고정)
 ARG SONAR_SCANNER_VERSION=6.2.1.4610
 RUN curl -fsSL -o /tmp/sonar-scanner.zip \
     "https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-${SONAR_SCANNER_VERSION}-linux-x64.zip" \
@@ -17,8 +19,5 @@ RUN curl -fsSL -o /tmp/sonar-scanner.zip \
 # sanity check (build time)
 RUN java -version && sonar-scanner --version
 
+# ARC는 runner 유저로 실행
 USER runner
-
-# run.sh 실행 → 실패하면 10분 sleep으로 붙잡아두기 (로그 확인용)
-ENTRYPOINT ["bash","-lc","/home/runner/run.sh; ec=$?; echo \"run.sh exited with code=$ec\"; sleep 600"]
-

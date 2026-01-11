@@ -28,7 +28,6 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -64,11 +63,9 @@ jobs:
           set -euo pipefail
           DEST="${ECR_REGISTRY}/${ECR_REPO}"
 
-          # always push SHA tag
           docker tag "${LOCAL_TAG}" "${DEST}:${GITHUB_SHA}"
           docker push "${DEST}:${GITHUB_SHA}"
 
-          # push latest + optional tag
           docker tag "${LOCAL_TAG}" "${DEST}:latest"
           docker push "${DEST}:latest"
 
