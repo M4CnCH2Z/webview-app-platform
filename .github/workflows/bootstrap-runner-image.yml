@@ -4,16 +4,15 @@ on:
   push:
     branches:
       - kaniko-migration
+    paths:
+      - "infra/runner-image/Dockerfile"
+      - ".github/workflows/bootstrap-runner-image.yml"
   workflow_dispatch:
     inputs:
       image_tag:
-        description: "Tag to push (default: latest)"
+        description: "Extra tag to push (default: latest)"
         required: false
         default: "latest"
-      dockerfile_path:
-        description: "Path to runner Dockerfile"
-        required: false
-        default: "Dockerfile"
 
 permissions:
   id-token: write
@@ -24,10 +23,12 @@ env:
   AWS_ROLE: arn:aws:iam::763479270202:role/GitHubActionsECRRole
   AWS_ACCOUNT_ID: "763479270202"
   ECR_REPO: github-runner-devsecops
+  DOCKERFILE_PATH: infra/runner-image/Dockerfile
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -47,29 +48,38 @@ jobs:
 
       - name: Build Runner Image (linux/amd64)
         env:
-          DOCKERFILE_PATH: ${{ inputs.dockerfile_path }}
           LOCAL_TAG: runner-bootstrap:${{ github.sha }}
         run: |
+          set -euo pipefail
           echo "Using Dockerfile: ${DOCKERFILE_PATH}"
+          test -f "${DOCKERFILE_PATH}"
           docker build --platform linux/amd64 -f "${DOCKERFILE_PATH}" -t "${LOCAL_TAG}" .
 
       - name: Tag & Push to ECR
         env:
-          IMAGE_TAG: ${{ inputs.image_tag }}
           ECR_REGISTRY: ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
           LOCAL_TAG: runner-bootstrap:${{ github.sha }}
+          INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
-          set -e
+          set -euo pipefail
           DEST="${ECR_REGISTRY}/${ECR_REPO}"
 
-          # always push SHA tag for traceability
+          # always push SHA tag
           docker tag "${LOCAL_TAG}" "${DEST}:${GITHUB_SHA}"
           docker push "${DEST}:${GITHUB_SHA}"
 
-          # push requested tag (default: latest)
-          docker tag "${LOCAL_TAG}" "${DEST}:${IMAGE_TAG}"
-          docker push "${DEST}:${IMAGE_TAG}"
+          # push latest + optional tag
+          docker tag "${LOCAL_TAG}" "${DEST}:latest"
+          docker push "${DEST}:latest"
+
+          if [ -n "${INPUT_IMAGE_TAG:-}" ] && [ "${INPUT_IMAGE_TAG}" != "latest" ]; then
+            docker tag "${LOCAL_TAG}" "${DEST}:${INPUT_IMAGE_TAG}"
+            docker push "${DEST}:${INPUT_IMAGE_TAG}"
+          fi
 
           echo "Pushed:"
           echo " - ${DEST}:${GITHUB_SHA}"
-          echo " - ${DEST}:${IMAGE_TAG}"
+          echo " - ${DEST}:latest"
+          if [ -n "${INPUT_IMAGE_TAG:-}" ] && [ "${INPUT_IMAGE_TAG}" != "latest" ]; then
+            echo " - ${DEST}:${INPUT_IMAGE_TAG}"
+          fi
