@@ -1,6 +1,9 @@
 name: Test CI Runner
 
 on:
+  push:
+      branches:
+        - kaniko-migration
   workflow_dispatch:
 
 jobs:
