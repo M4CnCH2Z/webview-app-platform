@@ -16,4 +16,5 @@ RUN curl -fsSL -o /tmp/sonar-scanner.zip \
 
 RUN java -version && sonar-scanner --version
 
-ENTRYPOINT ["/home/runner/run.sh"]
+# ENTRYPOINT 제거 - ARC가 자동으로 실행합니다
+# ENTRYPOINT ["/home/runner/run.sh"]
