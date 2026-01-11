@@ -1,6 +1,9 @@
 name: Bootstrap Runner Image to ECR
 
 on:
+  push:
+    branches:
+      - kaniko-migration
   workflow_dispatch:
     inputs:
       image_tag:
