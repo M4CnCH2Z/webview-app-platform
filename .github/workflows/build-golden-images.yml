@@ -1,99 +1,99 @@
-name: Build Golden Images with Kaniko
+# name: Build Golden Images with Kaniko
 
-on:
-  push:
-    branches: [ main, kaniko-migration ]  # TODO: remove kaniko-migration after testing
-    paths:
-      - 'infra/golden/**'
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Golden image tag (default: 1.0.0)'
-        required: false
-        default: '1.0.0'
+# on:
+#   push:
+#     branches: [ main, kaniko-migration ]  # TODO: remove kaniko-migration after testing
+#     paths:
+#       - 'infra/golden/**'
+#   workflow_dispatch:
+#     inputs:
+#       tag:
+#         description: 'Golden image tag (default: 1.0.0)'
+#         required: false
+#         default: '1.0.0'
 
-permissions:
-  id-token: write
-  contents: read
+# permissions:
+#   id-token: write
+#   contents: read
 
-env:
-  AWS_REGION: ap-northeast-2
-  ECR_REGISTRY: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com
+# env:
+#   AWS_REGION: ap-northeast-2
+#   ECR_REGISTRY: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com
 
-jobs:
-  detect-changes:
-    runs-on: ubuntu-latest
-    outputs:
-      nginx: ${{ steps.filter.outputs.nginx }}
-      java21: ${{ steps.filter.outputs.java21 }}
-      tag: ${{ steps.set-tag.outputs.tag }}
-    steps:
-      - uses: actions/checkout@v4
+# jobs:
+#   detect-changes:
+#     runs-on: ubuntu-latest
+#     outputs:
+#       nginx: ${{ steps.filter.outputs.nginx }}
+#       java21: ${{ steps.filter.outputs.java21 }}
+#       tag: ${{ steps.set-tag.outputs.tag }}
+#     steps:
+#       - uses: actions/checkout@v4
 
-      - id: filter
-        uses: dorny/paths-filter@v3
-        with:
-          filters: |
-            nginx: ['infra/golden/nginx/**']
-            java21: ['infra/golden/java21-runtime/**']
+#       - id: filter
+#         uses: dorny/paths-filter@v3
+#         with:
+#           filters: |
+#             nginx: ['infra/golden/nginx/**']
+#             java21: ['infra/golden/java21-runtime/**']
 
-      - id: set-tag
-        run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
-          else
-            echo "tag=1.0.0" >> $GITHUB_OUTPUT
-          fi
+#       - id: set-tag
+#         run: |
+#           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+#             echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+#           else
+#             echo "tag=1.0.0" >> $GITHUB_OUTPUT
+#           fi
 
 
-  build-nginx:
-    needs: detect-changes
-    if: needs.detect-changes.outputs.nginx == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ci-runner
-    steps:
-      - uses: actions/checkout@v4
+#   build-nginx:
+#     needs: detect-changes
+#     if: needs.detect-changes.outputs.nginx == 'true' || github.event_name == 'workflow_dispatch'
+#     runs-on: ci-runner
+#     steps:
+#       - uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          role-to-assume: arn:aws:iam::763479270202:role/GitHubActionsECRRole
-          aws-region: ${{ env.AWS_REGION }}
+#       - name: Configure AWS credentials
+#         uses: aws-actions/configure-aws-credentials@v2
+#         with:
+#           role-to-assume: arn:aws:iam::763479270202:role/GitHubActionsECRRole
+#           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Build and Push Golden Nginx with Kaniko
-        run: |
-          mkdir -p ~/.docker
-          echo '{"credsStore":"ecr-login"}' > ~/.docker/config.json
+#       - name: Build and Push Golden Nginx with Kaniko
+#         run: |
+#           mkdir -p ~/.docker
+#           echo '{"credsStore":"ecr-login"}' > ~/.docker/config.json
 
-          /kaniko/executor \
-            --context "${{ github.workspace }}/infra/golden/nginx" \
-            --dockerfile "${{ github.workspace }}/infra/golden/nginx/Dockerfile" \
-            --destination "${{ env.ECR_REGISTRY }}/golden-nginx:${{ needs.detect-changes.outputs.tag }}" \
-            --destination "${{ env.ECR_REGISTRY }}/golden-nginx:latest" \
-            --cache=true \
-            --cache-repo="${{ env.ECR_REGISTRY }}/golden-nginx/cache"
+#           /kaniko/executor \
+#             --context "${{ github.workspace }}/infra/golden/nginx" \
+#             --dockerfile "${{ github.workspace }}/infra/golden/nginx/Dockerfile" \
+#             --destination "${{ env.ECR_REGISTRY }}/golden-nginx:${{ needs.detect-changes.outputs.tag }}" \
+#             --destination "${{ env.ECR_REGISTRY }}/golden-nginx:latest" \
+#             --cache=true \
+#             --cache-repo="${{ env.ECR_REGISTRY }}/golden-nginx/cache"
 
-  build-java21:
-    needs: detect-changes
-    if: needs.detect-changes.outputs.java21 == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ci-runner
-    steps:
-      - uses: actions/checkout@v4
+#   build-java21:
+#     needs: detect-changes
+#     if: needs.detect-changes.outputs.java21 == 'true' || github.event_name == 'workflow_dispatch'
+#     runs-on: ci-runner
+#     steps:
+#       - uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          role-to-assume: arn:aws:iam::763479270202:role/GitHubActionsECRRole
-          aws-region: ${{ env.AWS_REGION }}
+#       - name: Configure AWS credentials
+#         uses: aws-actions/configure-aws-credentials@v2
+#         with:
+#           role-to-assume: arn:aws:iam::763479270202:role/GitHubActionsECRRole
+#           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Build and Push Golden Java21 with Kaniko
-        run: |
-          mkdir -p ~/.docker
-          echo '{"credsStore":"ecr-login"}' > ~/.docker/config.json
+#       - name: Build and Push Golden Java21 with Kaniko
+#         run: |
+#           mkdir -p ~/.docker
+#           echo '{"credsStore":"ecr-login"}' > ~/.docker/config.json
 
-          /kaniko/executor \
-            --context "${{ github.workspace }}/infra/golden/java21-runtime" \
-            --dockerfile "${{ github.workspace }}/infra/golden/java21-runtime/Dockerfile" \
-            --destination "${{ env.ECR_REGISTRY }}/golden-java21-runtime:${{ needs.detect-changes.outputs.tag }}" \
-            --destination "${{ env.ECR_REGISTRY }}/golden-java21-runtime:latest" \
-            --cache=true \
-            --cache-repo="${{ env.ECR_REGISTRY }}/golden-java21-runtime/cache"
+#           /kaniko/executor \
+#             --context "${{ github.workspace }}/infra/golden/java21-runtime" \
+#             --dockerfile "${{ github.workspace }}/infra/golden/java21-runtime/Dockerfile" \
+#             --destination "${{ env.ECR_REGISTRY }}/golden-java21-runtime:${{ needs.detect-changes.outputs.tag }}" \
+#             --destination "${{ env.ECR_REGISTRY }}/golden-java21-runtime:latest" \
+#             --cache=true \
+#             --cache-repo="${{ env.ECR_REGISTRY }}/golden-java21-runtime/cache"

@@ -1,0 +1,5 @@
+# LangChain + Anthropic Claude API
+langchain-anthropic>=0.1.0
+langchain-core>=0.1.0
+
+# JSON 처리는 Python 기본 내장 라이브러리 사용

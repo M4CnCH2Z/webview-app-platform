@@ -1,0 +1,72 @@
+name: Bootstrap Runner Image to ECR
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Tag to push (default: latest)"
+        required: false
+        default: "latest"
+      dockerfile_path:
+        description: "Path to runner Dockerfile"
+        required: false
+        default: "Dockerfile"
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ap-northeast-2
+  AWS_ROLE: arn:aws:iam::763479270202:role/GitHubActionsECRRole
+  AWS_ACCOUNT_ID: "763479270202"
+  ECR_REPO: github-runner-devsecops
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_ROLE }}
+
+      - name: Login to ECR
+        env:
+          ECR_REGISTRY: ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+        run: |
+          aws ecr get-login-password --region "${AWS_REGION}" | \
+            docker login --username AWS --password-stdin "${ECR_REGISTRY}"
+
+      - name: Build Runner Image (linux/amd64)
+        env:
+          DOCKERFILE_PATH: ${{ inputs.dockerfile_path }}
+          LOCAL_TAG: runner-bootstrap:${{ github.sha }}
+        run: |
+          echo "Using Dockerfile: ${DOCKERFILE_PATH}"
+          docker build --platform linux/amd64 -f "${DOCKERFILE_PATH}" -t "${LOCAL_TAG}" .
+
+      - name: Tag & Push to ECR
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+          ECR_REGISTRY: ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+          LOCAL_TAG: runner-bootstrap:${{ github.sha }}
+        run: |
+          set -e
+          DEST="${ECR_REGISTRY}/${ECR_REPO}"
+
+          # always push SHA tag for traceability
+          docker tag "${LOCAL_TAG}" "${DEST}:${GITHUB_SHA}"
+          docker push "${DEST}:${GITHUB_SHA}"
+
+          # push requested tag (default: latest)
+          docker tag "${LOCAL_TAG}" "${DEST}:${IMAGE_TAG}"
+          docker push "${DEST}:${IMAGE_TAG}"
+
+          echo "Pushed:"
+          echo " - ${DEST}:${GITHUB_SHA}"
+          echo " - ${DEST}:${IMAGE_TAG}"
