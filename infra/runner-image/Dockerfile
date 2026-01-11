@@ -14,6 +14,3 @@ RUN curl -fsSL -o /tmp/sonar-scanner.zip \
  && unzip -q /tmp/sonar-scanner.zip -d /opt \
  && ln -s "/opt/sonar-scanner-${SONAR_SCANNER_VERSION}-linux-x64/bin/sonar-scanner" /usr/local/bin/sonar-scanner \
  && rm -f /tmp/sonar-scanner.zip
-
-# 러너가 계속 살아있게 엔트리포인트 고정
-ENTRYPOINT ["/home/runner/run.sh"]
