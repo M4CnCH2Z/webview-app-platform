@@ -17,11 +17,8 @@ RUN curl -fsSL -o /tmp/sonar-scanner.zip \
 # sanity check (build time)
 RUN java -version && sonar-scanner --version
 
-# ARC는 runner 유저로 실행하는 게 정석
 USER runner
 
-# 디버깅용: 5분만 살아있게 (확인 끝나면 삭제)
-ENTRYPOINT ["bash","-lc","echo 'debug sleep'; sleep 300"]
+# run.sh 실행 → 실패하면 10분 sleep으로 붙잡아두기 (로그 확인용)
+ENTRYPOINT ["bash","-lc","/home/runner/run.sh; ec=$?; echo \"run.sh exited with code=$ec\"; sleep 600"]
 
-# 이게 핵심: 러너 프로세스를 시작해야 컨테이너가 안 죽음
-#ENTRYPOINT ["/home/runner/run.sh"]
