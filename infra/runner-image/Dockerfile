@@ -14,7 +14,11 @@ RUN curl -fsSL -o /tmp/sonar-scanner.zip \
  && ln -s "/opt/sonar-scanner-${SONAR_SCANNER_VERSION}-linux-x64/bin/sonar-scanner" /usr/local/bin/sonar-scanner \
  && rm -f /tmp/sonar-scanner.zip
 
+# sanity check (build time)
 RUN java -version && sonar-scanner --version
 
-# Switch back to runner user for ARC
+# ARC는 runner 유저로 실행하는 게 정석
 USER runner
+
+# ✅ 이게 핵심: 러너 프로세스를 시작해야 컨테이너가 안 죽음
+ENTRYPOINT ["/home/runner/run.sh"]
