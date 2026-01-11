@@ -19,7 +19,7 @@ on:
 
 jobs:
   decision-evaluate:
-    runs-on: ci-runner
+    runs-on: ubuntu-latest
     steps:
       - name: Evaluate security gate decision
         env:
