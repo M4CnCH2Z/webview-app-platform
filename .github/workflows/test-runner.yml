@@ -1,0 +1,15 @@
+name: Test CI Runner
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-runner:
+    runs-on: ci-runner
+    steps:
+      - name: Test runner
+        run: |
+          echo "Runner is working!"
+          echo "Runner version: $(uname -a)"
+          java -version
+          sonar-scanner --version
