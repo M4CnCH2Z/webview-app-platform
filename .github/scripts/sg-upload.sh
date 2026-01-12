@@ -41,34 +41,57 @@ if ! jq empty "$DEDUP_FILE" 2>/dev/null; then
   exit 1
 fi
 echo "JSON 유효성 검사 통과"
-
 # ---------------------------------------------------------
 # STEP 1: Presign
 # ---------------------------------------------------------
+
+# 디버깅: 변수 값 확인
+echo "=== Presign 요청 변수 확인 ==="
+echo "COMMIT_SHA: $COMMIT_SHA"
+echo "FILE_SHA: $FILE_SHA"
+echo "FILE_SIZE: $FILE_SIZE"
+echo "PR_NUMBER: [$PR_NUMBER]"
+
+# PR_NUMBER가 비어있으면 기본값 설정
+if [ -z "$PR_NUMBER" ] || [ "$PR_NUMBER" == "null" ]; then
+  echo "PR_NUMBER가 비어있음, 0으로 설정"
+  PR_NUMBER=0
+fi
+
+# Presign 요청 페이로드 생성 (producer 필드 추가!)
+PRESIGN_PAYLOAD=$(cat <<EOF
+{
+  "release_id": "sha256:$COMMIT_SHA",
+  "env": "pr",
+  "gate": "PR",
+  "evidence_type": "SAST",
+  "artifact_name": "report.json",
+  "content_type": "application/json",
+  "content_length": $FILE_SIZE,
+  "sha256": "$FILE_SHA",
+  "producer": {
+    "repo": "${GITHUB_REPOSITORY:-unknown}",
+    "workflow": "${GITHUB_WORKFLOW:-unknown}",
+    "job": "${GITHUB_JOB:-unknown}",
+    "run_id": "${GITHUB_RUN_ID:-0}",
+    "attempt": ${GITHUB_RUN_ATTEMPT:-1},
+    "actor": "${GITHUB_ACTOR:-unknown}"
+  },
+  "commit_sha": "$COMMIT_SHA",
+  "pr_number": $PR_NUMBER
+}
+EOF
+)
+
+echo "Presign 요청 페이로드:"
+echo "$PRESIGN_PAYLOAD" | jq .
+
 PRESIGN_RES=$(curl -s -X POST "$SG_API_URL/v1/evidence/presign" \
   -H "Authorization: Bearer $SG_API_TOKEN" \
   -H "Content-Type: application/json" \
-  -d "{
-    \"release_id\": \"sha256:$COMMIT_SHA\",
-    \"env\": \"pr\",
-    \"gate\": \"PR\",
-    \"evidence_type\": \"SAST\",
-    \"artifact_name\": \"report.json\",
-    \"sha256\": \"$FILE_SHA\",
-    \"content_length\": $FILE_SIZE,
-    \"pr_number\": $PR_NUMBER
-  }")
+  -d "$PRESIGN_PAYLOAD")
 
 echo "Presign 응답: $PRESIGN_RES"
-
-EVIDENCE_ID=$(echo "$PRESIGN_RES" | jq -r '.evidence_id')
-UPLOAD_URL=$(echo "$PRESIGN_RES" | jq -r '.upload_url')
-S3_KEY=$(echo "$PRESIGN_RES" | jq -r '.s3_key')
-
-if [ "$EVIDENCE_ID" == "null" ] || [ -z "$EVIDENCE_ID" ]; then
-  echo "Presign 실패: evidence_id를 받지 못함"
-  exit 1
-fi
 
 # ---------------------------------------------------------
 # STEP 2: S3 Upload

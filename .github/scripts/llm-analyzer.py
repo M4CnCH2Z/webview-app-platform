@@ -7,7 +7,6 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 
-
 # 심각도 우선순위 (낮을수록 중요)
 SEVERITY_ORDER = {
     "CRITICAL": 0, "BLOCKER": 0,
@@ -15,7 +14,6 @@ SEVERITY_ORDER = {
     "MEDIUM": 2, "MINOR": 2, "WARNING": 2,
     "LOW": 3, "INFO": 3, "NOTE": 3
 }
-
 
 def extract_key_findings(data, source):
     """각 도구별로 핵심 정보만 추출 (토큰 절약)"""
