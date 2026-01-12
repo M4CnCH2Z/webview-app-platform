@@ -48,7 +48,7 @@ Security Gate(SG) 판정 결과 **불합격(FAIL)**이 발생했습니다.
     )
 
     # 4. 클로드 호출 (최신 모델 사용)
-    model = ChatAnthropic(model="claude-3-5-sonnet-20241022", temperature=0)
+    model = ChatAnthropic(model="claude-sonnet-4-20250514", temperature=0)
 
     print("클로드가 최종 시큐어 코딩 가이드를 작성 중입니다...")
 
