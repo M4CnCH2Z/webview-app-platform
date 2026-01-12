@@ -82,7 +82,7 @@ jobs:  # 실제 실행될 작업(Job)들
           args: >
             -Dsonar.projectKey=${{ secrets.SONAR_PROJECT_KEY }}
             -Dsonar.sources=apps/api/src,apps/web/src
-            -Dsonar.java.binaries=apps/api/build/classes
+            -Dsonar.java.binaries=apps/api/build/classes/java/main
 
       - name: Download SonarQube results  # SonarQube 이슈 결과를 API로 내려받아 파일로 저장
         run: |
