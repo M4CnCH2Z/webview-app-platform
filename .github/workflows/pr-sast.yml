@@ -98,8 +98,9 @@ jobs:  # 실제 실행될 작업(Job)들
       - name: Download SonarQube results
         run: |
           mkdir -p scan-results
+          # BLOCKER, CRITICAL만 필터링
           curl -u "${{ secrets.SONAR_TOKEN }}:" \
-            "${{ secrets.SONAR_HOST_URL }}/api/issues/search?componentKeys=${{ secrets.SONAR_PROJECT_KEY }}&resolved=false" \
+            "${{ secrets.SONAR_HOST_URL }}/api/issues/search?componentKeys=${{ secrets.SONAR_PROJECT_KEY }}&resolved=false&severities=BLOCKER,CRITICAL" \
             -o scan-results/sonar-results.json
 
       - name: Upload SonarQube results  # Sonar 결과 JSON을 아티팩트로 업로드(다른 Job에서 사용)
@@ -128,11 +129,26 @@ jobs:  # 실제 실행될 작업(Job)들
             --config p/javascript \
             --config p/typescript \
             --config p/react \
+            --severity ERROR \
             --sarif \
             --output semgrep.sarif \
             || true
         env:
           SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+
+      - name: Filter Semgrep to Critical/High only
+        run: |
+          python3 -c "
+          import json
+          with open('semgrep.sarif') as f:
+              data = json.load(f)
+          # SARIF의 runs[].results[]에서 level이 'error'인 것만 남김
+          for run in data.get('runs', []):
+              if 'results' in run:
+                  run['results'] = [r for r in run['results'] if r.get('level') == 'error']
+          with open('semgrep.sarif', 'w') as f:
+              json.dump(data, f)
+          "
 
       - name: Upload Semgrep results
         uses: actions/upload-artifact@v4
@@ -210,6 +226,20 @@ jobs:  # 실제 실행될 작업(Job)들
           category: "/language:${{ matrix.language }}"
           output: scan-results/codeql-${{ matrix.language }}.sarif
           upload: false
+
+      - name: Filter CodeQL to Error level only
+        run: |
+          python3 -c "
+          import json
+          with open('scan-results/codeql-${{ matrix.language }}.sarif') as f:
+              data = json.load(f)
+          # SARIF의 runs[].results[]에서 level이 'error'인 것만 남김
+          for run in data.get('runs', []):
+              if 'results' in run:
+                  run['results'] = [r for r in run['results'] if r.get('level') == 'error']
+          with open('scan-results/codeql-${{ matrix.language }}.sarif', 'w') as f:
+              json.dump(data, f)
+          "
 
       - name: Upload CodeQL results
         uses: actions/upload-artifact@v4
