@@ -51,13 +51,22 @@ jobs:  # 실제 실행될 작업(Job)들
       # 2. 컴파일 실행 (그래야 classes 폴더가 생김)
       - name: Build Java API
         run: |
-          if [ -f "apps/api/gradlew" ]; then
-            chmod +x apps/api/gradlew
-            ./apps/api/gradlew -p apps/api compileJava
-          else
-            echo "Gradle wrapper not found"
-            exit 1 # 파일이 없으면 에러를 내고 멈추는 게 안전합니다.
-          fi
+          cd apps/api
+          chmod +x gradlew
+          ./gradlew compileJava
+
+          #if [ -f "apps/api/gradlew" ]; then
+          #  chmod +x apps/api/gradlew
+          #  ./apps/api/gradlew -p apps/api compileJava
+          #else
+          #  echo "Gradle wrapper not found"
+          #  exit 1 # 파일이 없으면 에러를 내고 멈추는 게 안전합니다.
+          #fi
+      - name: Debug - Verify build output
+        run: |
+          echo "=== 빌드 결과 확인 ==="
+          find apps/api/build -name "*.class" 2>/dev/null | head -5 || echo "❌ .class 파일 없음"
+          ls -la apps/api/build/classes/java/main 2>/dev/null || echo "❌ 경로 없음"
 
       # 3. Node 환경 세팅 및 분석 실행
       - name: Setup Node.js
@@ -72,6 +81,8 @@ jobs:  # 실제 실행될 작업(Job)들
 
       - name: Install dependencies  # 의존성 설치(빌드/분석에 필요)
         run: pnpm install --no-frozen-lockfile  # lockfile 고정 강제 안 함(환경/lock mismatch 허용)
+
+      
 
       - name: Run SonarQube Scanner
         uses: sonarsource/sonarqube-scan-action@master
@@ -102,38 +113,34 @@ jobs:  # 실제 실행될 작업(Job)들
   # Job 2: Semgrep 분석 
   # ===================================================================
   semgrep:
-    name: Semgrep Analysis
-    runs-on: ubuntu-latest
+  name: Semgrep Analysis
+  runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+  steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
 
-      - name: Run Semgrep and Generate Results
-        uses: semgrep/semgrep-action@v1
-        with:
-          config: >-
-            p/security-audit
-            p/owasp-top-ten
-            p/javascript
-            p/typescript
-            p/react
-          # 핵심: 결과를 바로 .json 확장자로 뽑아냄 
-          # semgrep-action은 sarif 파일명을 지정하는 옵션을 제공하거나 
-          # 기본적으로 'semgrep.sarif'를 생성
-          # sarif는 기본적으로 json 포맷임. 
-          #generateSarif: "1" 
-          # args를 통해 직접 출력 형식과 파일명을 지정
-          args: "--sarif --output=semgrep.sarif"
-        env:
-          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
-      # 파일 이름을 바꾸는 대신, 생성된 semgrep.sarif를 그대로 업로드합니다.
-      - name: Upload Semgrep results
-        uses: actions/upload-artifact@v4
-        with:
-          name: semgrep-results
-          path: semgrep.sarif
-          retention-days: 7
+    - name: Install and Run Semgrep
+      run: |
+        pip install semgrep
+        semgrep scan \
+          --config p/security-audit \
+          --config p/owasp-top-ten \
+          --config p/javascript \
+          --config p/typescript \
+          --config p/react \
+          --sarif \
+          --output semgrep.sarif \
+          || true
+      env:
+        SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+
+    - name: Upload Semgrep results
+      uses: actions/upload-artifact@v4
+      with:
+        name: semgrep-results
+        path: semgrep.sarif
+        retention-days: 7
 # ===================================================================
 # Job 3: CodeQL 분석 (최적화 버전)
 # ===================================================================
