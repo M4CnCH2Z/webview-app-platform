@@ -112,12 +112,13 @@ jobs:  # 실제 실행될 작업(Job)들
           name: semgrep-results
           path: semgrep.sarif
           retention-days: 7
-# ===================================================================
-# Job 3: CodeQL 분석 (최적화 버전)
-# ===================================================================
-codeql:
-  name: CodeQL Analysis
-  runs-on: ubuntu-latest
+
+  # ===================================================================
+  # Job 3: CodeQL 분석 (최적화 버전)
+  # ===================================================================
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
 
   strategy:
     fail-fast: false
