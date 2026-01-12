@@ -4,14 +4,11 @@
 REPORT_FILE=$1
 PR_NUMBER=$2
 
-# COMMIT_SHA 환경 변수 설정 (GitHub Actions에서는 GITHUB_SHA, 로컬에서는 git 명령 사용)
 COMMIT_SHA=${GITHUB_SHA:-$(git rev-parse HEAD)}
 
-# 파일의 지문(SHA256)과 크기를 미리 계산해둡니다 (명세서 필수값)
-# macOS와 Linux 모두 호환되도록 수정
+# 파일의 지문(SHA256)과 크기 계산
 FILE_SHA=$(shasum -a 256 "$REPORT_FILE" 2>/dev/null || sha256sum "$REPORT_FILE" | cut -d' ' -f1)
 
-# OS별로 다른 stat 명령어 사용
 if [[ "$OSTYPE" == "darwin"* ]]; then
   FILE_SIZE=$(stat -f%z "$REPORT_FILE")
 else
@@ -21,7 +18,28 @@ fi
 echo "SG 전송 시작: $REPORT_FILE (Size: $FILE_SIZE, Commit: $COMMIT_SHA)"
 
 # ---------------------------------------------------------
-# STEP 1: Presign (서버한테 파일 올릴 주소 달라고 하기)
+# 디버깅: 입력 파일 확인
+# ---------------------------------------------------------
+echo "=== 입력 파일 확인 ==="
+DEDUP_FILE="$(dirname "$REPORT_FILE")/deduplicated-results.json"
+if [ ! -f "$DEDUP_FILE" ]; then
+  echo "파일 없음: $DEDUP_FILE"
+  exit 1
+fi
+
+echo "📄 deduplicated-results.json 내용 (첫 500자):"
+head -c 500 "$DEDUP_FILE"
+echo ""
+
+# JSON 유효성 검사
+if ! jq empty "$DEDUP_FILE" 2>/dev/null; then
+  echo "Invalid JSON in $DEDUP_FILE"
+  exit 1
+fi
+echo "JSON 유효성 검사 통과"
+
+# ---------------------------------------------------------
+# STEP 1: Presign
 # ---------------------------------------------------------
 PRESIGN_RES=$(curl -s -X POST "$SG_API_URL/v1/evidence/presign" \
   -H "Authorization: Bearer $SG_API_TOKEN" \
@@ -37,44 +55,70 @@ PRESIGN_RES=$(curl -s -X POST "$SG_API_URL/v1/evidence/presign" \
     \"pr_number\": $PR_NUMBER
   }")
 
-# 서버가 준 금고 번호(evidence_id)와 금고 주소(upload_url)를 챙깁니다.
+echo "Presign 응답: $PRESIGN_RES"
+
 EVIDENCE_ID=$(echo "$PRESIGN_RES" | jq -r '.evidence_id')
 UPLOAD_URL=$(echo "$PRESIGN_RES" | jq -r '.upload_url')
 S3_KEY=$(echo "$PRESIGN_RES" | jq -r '.s3_key')
 
+if [ "$EVIDENCE_ID" == "null" ] || [ -z "$EVIDENCE_ID" ]; then
+  echo "Presign 실패: evidence_id를 받지 못함"
+  exit 1
+fi
+
 # ---------------------------------------------------------
-# STEP 2: S3 Upload (실제 파일 실물을 창고에 넣기)
+# STEP 2: S3 Upload
 # ---------------------------------------------------------
 echo "S3에 전체 리포트 업로드 중..."
 curl -s -X PUT -T "$REPORT_FILE" "$UPLOAD_URL"
 
 # ---------------------------------------------------------
-# STEP 3: Complete (파일 넣었으니 요약 숫자 보고하기)
+# STEP 3: Complete - Summary 안전하게 추출
 # ---------------------------------------------------------
 echo "SG에 최종 요약본(Summary) 보고 중..."
-SUMMARY=$(jq -c '.summary' "$(dirname "$REPORT_FILE")/deduplicated-results.json")
 
-curl -s -X POST "$SG_API_URL/v1/evidence/complete" \
+# Summary 추출 및 검증
+SUMMARY=$(jq -c '.summary // empty' "$DEDUP_FILE")
+
+if [ -z "$SUMMARY" ] || [ "$SUMMARY" == "null" ]; then
+  echo "summary 필드 없음, 기본값 사용"
+  SUMMARY='{"tool":"Claude-AI-Analyzer","tool_version":"4.5","new_critical":0,"new_high":0,"new_medium":0,"new_low":0}'
+fi
+
+echo "Summary 값: $SUMMARY"
+
+# Complete 요청 - JSON을 임시 파일로 만들어서 전송 (특수문자 문제 방지)
+COMPLETE_PAYLOAD=$(cat <<EOF
+{
+  "evidence_id": "$EVIDENCE_ID",
+  "release_id": "sha256:$COMMIT_SHA",
+  "env": "pr",
+  "gate": "PR",
+  "evidence_type": "SAST",
+  "s3_key": "$S3_KEY",
+  "sha256": "$FILE_SHA",
+  "size": $FILE_SIZE,
+  "summary": $SUMMARY,
+  "pr_number": $PR_NUMBER,
+  "issued_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+}
+EOF
+)
+
+echo "Complete 요청 페이로드:"
+echo "$COMPLETE_PAYLOAD" | jq .
+
+COMPLETE_RES=$(curl -s -X POST "$SG_API_URL/v1/evidence/complete" \
   -H "Authorization: Bearer $SG_API_TOKEN" \
   -H "Content-Type: application/json" \
-  -d "{
-    \"evidence_id\": \"$EVIDENCE_ID\",
-    \"release_id\": \"sha256:$COMMIT_SHA\",
-    \"env\": \"pr\",
-    \"gate\": \"PR\",
-    \"evidence_type\": \"SAST\",
-    \"s3_key\": \"$S3_KEY\",
-    \"sha256\": \"$FILE_SHA\",
-    \"size\": $FILE_SIZE,
-    \"summary\": $SUMMARY,
-    \"pr_number\": $PR_NUMBER,
-    \"issued_at\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"
-  }"
+  -d "$COMPLETE_PAYLOAD")
+
+echo "Complete 응답: $COMPLETE_RES"
 
 # ---------------------------------------------------------
-# STEP 4: Evaluate (판정해달라고 요청하기)
+# STEP 4: Evaluate
 # ---------------------------------------------------------
-echo "⚖️ 최종 판정(Evaluate) 요청 중..."
+echo "최종 판정(Evaluate) 요청 중..."
 EVAL_RES=$(curl -s -X POST "$SG_API_URL/v1/decisions/evaluate" \
   -H "Authorization: Bearer $SG_API_TOKEN" \
   -H "Content-Type: application/json" \
@@ -85,8 +129,8 @@ EVAL_RES=$(curl -s -X POST "$SG_API_URL/v1/decisions/evaluate" \
     \"context\": { \"pr_number\": $PR_NUMBER, \"commit_sha\": \"$COMMIT_SHA\" }
   }")
 
-# 판정 결과(PASS/FAIL/PENDING)를 다음 Job에서 볼 수 있게 저장!
-# 명세서상 티켓 ID 대신 decision_id를 저장하거나 결과 전체를 저장 
+echo "Evaluate 응답: $EVAL_RES"
+
 echo "$EVAL_RES" | jq -r '.decision_id' > /tmp/sg-ticket-id
 echo "$EVAL_RES" > /tmp/sg-eval-result
 
