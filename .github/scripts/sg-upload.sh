@@ -6,15 +6,19 @@ PR_NUMBER=$2
 
 COMMIT_SHA=${GITHUB_SHA:-$(git rev-parse HEAD)}
 
-# 파일의 지문(SHA256)과 크기 계산
-FILE_SHA=$(shasum -a 256 "$REPORT_FILE" 2>/dev/null || sha256sum "$REPORT_FILE" | cut -d' ' -f1)
+# 파일의 지문(SHA256) 계산 
+FILE_SHA=$(sha256sum "$REPORT_FILE" 2>/dev/null | cut -d' ' -f1 || shasum -a 256 "$REPORT_FILE" | cut -d' ' -f1)
 
+# OS별로 다른 stat 명령어 사용
 if [[ "$OSTYPE" == "darwin"* ]]; then
   FILE_SIZE=$(stat -f%z "$REPORT_FILE")
 else
   FILE_SIZE=$(stat -c%s "$REPORT_FILE")
 fi
 
+# 디버깅 로그 추가
+echo "FILE_SHA: $FILE_SHA"
+echo "FILE_SIZE: $FILE_SIZE"
 echo "SG 전송 시작: $REPORT_FILE (Size: $FILE_SIZE, Commit: $COMMIT_SHA)"
 
 # ---------------------------------------------------------
