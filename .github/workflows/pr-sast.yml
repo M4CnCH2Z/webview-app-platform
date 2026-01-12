@@ -120,13 +120,13 @@ jobs:  # 실제 실행될 작업(Job)들
     name: CodeQL Analysis
     runs-on: ubuntu-latest
 
-  strategy:
-    fail-fast: false
-    matrix:
-      # javascript와 typescript를 합쳐서 시간 단축!
-      language: [ 'javascript-typescript', 'java-kotlin' ]
+    strategy:
+      fail-fast: false
+      matrix:
+        # javascript와 typescript를 합쳐서 시간 단축!
+        language: [ 'javascript-typescript', 'java-kotlin' ]
 
-  steps:
+    steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
