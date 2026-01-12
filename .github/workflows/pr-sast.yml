@@ -113,56 +113,56 @@ jobs:  # 실제 실행될 작업(Job)들
   # Job 2: Semgrep 분석 
   # ===================================================================
   semgrep:
-  name: Semgrep Analysis
-  runs-on: ubuntu-latest
+    name: Semgrep Analysis
+    runs-on: ubuntu-latest
 
-  steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Install and Run Semgrep
-      run: |
-        pip install semgrep
-        semgrep scan \
-          --config p/security-audit \
-          --config p/owasp-top-ten \
-          --config p/javascript \
-          --config p/typescript \
-          --config p/react \
-          --sarif \
-          --output semgrep.sarif \
-          || true
-      env:
-        SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+      - name: Install and Run Semgrep
+        run: |
+          pip install semgrep
+          semgrep scan \
+            --config p/security-audit \
+            --config p/owasp-top-ten \
+            --config p/javascript \
+            --config p/typescript \
+            --config p/react \
+            --sarif \
+            --output semgrep.sarif \
+            || true
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
 
-    - name: Upload Semgrep results
-      uses: actions/upload-artifact@v4
-      with:
-        name: semgrep-results
-        path: semgrep.sarif
-        retention-days: 7
-# ===================================================================
-# Job 3: CodeQL 분석 (최적화 버전)
-# ===================================================================
-codeql:
-  name: CodeQL Analysis
-  runs-on: ubuntu-latest
+      - name: Upload Semgrep results
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-results
+          path: semgrep.sarif
+          retention-days: 7
 
-  strategy:
-    fail-fast: false
-    matrix:
-      # javascript와 typescript를 합쳐서 시간 단축!
-      language: [ 'javascript-typescript', 'java-kotlin' ]
+  # ===================================================================
+  # Job 3: CodeQL 분석 (최적화 버전)
+  # ===================================================================
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
 
-  steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'javascript-typescript', 'java-kotlin' ]
 
-    - name: Initialize CodeQL
-      uses: github/codeql-action/init@v3
-      with:
-        languages: ${{ matrix.language }}
-        queries: security-extended,security-and-quality
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-extended,security-and-quality
 
     # ===============================================================
     # Java / Kotlin 전용 설정 -> 빌드 과정을 봐야하므로 따로 분리 
