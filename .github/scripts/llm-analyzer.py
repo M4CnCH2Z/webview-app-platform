@@ -1,227 +1,118 @@
-#!/usr/bin/env python3
-import json
 import os
+import json
+import glob
 import sys
-from pathlib import Path
-
-# LangChain 관련 모듈
 from langchain_anthropic import ChatAnthropic
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import JsonOutputParser
 
+#입력 디렉토리(scan-results 같은 곳)를 받아서 “중복 제거 + SG용 요약 JSON 생성”을 수행하는 함수
+def run_deduplication(input_dir):
+    # 1. 스캔 결과 파일 수집
+    # input_dir 안의 *.json 파일을 전부 찾음.
+    json_files = glob.glob(os.path.join(input_dir, "*.json"))
+    all_findings = []
 
-def load_results(results_dir):
-    """3개 도구의 결과 파일 로드"""
-    results = {}
+    # 찾은 json 파일들 중에서 deduplicated-results.json과 sg-verdict.json은 제외하고 읽음
+    for file_path in json_files:
+        if "deduplicated-results.json" in file_path or "sg-verdict.json" in file_path:
+            continue
+        try:
+            with open(file_path, "r", encoding="utf-8") as f: #utf-8로 읽기 
+                all_findings.append({
+                    "source": os.path.basename(file_path), #파일명만 저장 
+                    "data": json.load(f) #json 데이터 파싱 
+                })
+        except Exception as e: # 실패한 파일은 건너뛰고 로그만 찍음(프로그램 전체는 계속 진행)
+            print(f"{file_path} 읽기 실패: {e}")
 
-    try:
-        with open(f"{results_dir}/sonar-results.json") as f:
-            results['sonar'] = json.load(f)
+    if not all_findings:
+        print("분석할 결과 파일이 없습니다.")
+        return
 
-        with open(f"{results_dir}/codeql-results.sarif") as f:
-            results['codeql'] = json.load(f)
+    # 2. JsonOutputParser 설정 (SG 규격 강제)
+    # LLM 출력물을 JSON으로 받기 위한 파서
+    parser = JsonOutputParser()
 
-        with open(f"{results_dir}/semgrep-results.json") as f:
-            results['semgrep'] = json.load(f)
-    except FileNotFoundError as e:
-        print(f"❌ Error: {e.filename} not found")
-        sys.exit(1)
-    except json.JSONDecodeError as e:
-        print(f"❌ Error: Invalid JSON in file - {e}")
-        sys.exit(1)
+    # 3. 프롬프트 설정 (SG API 규격 주입)
+    # 클로드에게 중복 제거 후 반드시 'summary' 숫자를 세라고 명령합니다.
+    prompt = PromptTemplate(
+        template="""당신은 숙련된 보안 엔지니어입니다. 
+다음 보안 도구들의 결과에서 중복을 제거하고, Security Gate(SG) API 전송을 위한 요약본을 만드세요.
 
-    return results
+[수행 지침]
+1. 여러 도구에서 발견된 동일한 파일/라인의 이슈는 하나로 합치세요.
+2. 중복 제거된 최종 이슈들을 바탕으로 등급별(Critical, High, Medium, Low) 개수를 정확히 세세요.
+3. 결과는 반드시 아래의 JSON 구조를 유지해야 합니다.
 
+[필수 JSON 구조]
+{{
+  "summary": {{
+    "tool": "Claude-AI-Analyzer",
+    "tool_version": "4.5",
+    "new_critical": 0,
+    "new_high": 0,
+    "new_medium": 0,
+    "new_low": 0
+  }},
+  "findings": [
+    {{
+      "title": "이슈 제목",
+      "severity": "CRITICAL/HIGH/MEDIUM/LOW",
+      "file": "파일 경로",
+      "line": "라인 번호",
+      "description": "상세 설명"
+    }}
+  ]
+}}
 
-def summarize_results(results):
-    """데이터 전처리 - AI 분석에 필요한 핵심 정보만 추출"""
-    summary = {
-        'sonar': {
-            'total': len(results['sonar'].get('issues', [])),
-            'issues': [
-                {
-                    'rule': i.get('rule', 'Unknown'),
-                    'message': i.get('message', ''),
-                    'severity': i.get('severity', 'info')
-                }
-                for i in results['sonar'].get('issues', [])
-            ]
-        },
-        'codeql': {
-            'total': len(results['codeql']['runs'][0].get('results', [])),
-            'issues': [
-                {
-                    'ruleId': r.get('ruleId', 'Unknown'),
-                    'message': r.get('message', {}).get('text', '')
-                }
-                for r in results['codeql']['runs'][0].get('results', [])
-            ]
-        },
-        'semgrep': {
-            'total': len(results['semgrep'].get('results', [])),
-            'issues': [
-                {
-                    'path': r.get('path', 'Unknown'),
-                    'message': r.get('extra', {}).get('message', ''),
-                    'severity': r.get('extra', {}).get('severity', 'WARNING')
-                }
-                for r in results['semgrep'].get('results', [])
-            ]
-        }
-    }
-    return summary
+{format_instructions}
 
-
-def analyze_with_langchain(results, api_key):
-    """LangChain을 이용한 통합 보안 분석"""
-
-    # 1. Claude 모델 설정
-    model = ChatAnthropic(
-        model="claude-sonnet-4-20250514",  # 최신 Sonnet 4.5 모델
-        anthropic_api_key=api_key,
-        temperature=0,  # 보안 분석은 일관성 중요 → 무작위성 제거
-        max_tokens=4000  # 상세한 리포트 작성을 위해 토큰 증가
+데이터:
+{all_findings}""",
+        input_variables=["all_findings"],
+        partial_variables={"format_instructions": parser.get_format_instructions()},
     )
 
-    # 2. 프롬프트 템플릿 정의
-    template = """당신은 금융권 DevSecOps 보안 전문가입니다.
-다음 3개의 보안 스캔 도구 결과를 종합 분석하여 실무에 바로 적용 가능한 리포트를 작성하세요.
+    # 4. 클로드 호출 (최신 모델 사용)
+    model = ChatAnthropic(model="claude-3-5-sonnet-20241022", temperature=0)
+    chain = prompt | model | parser
 
-📌 **분석 요구사항:**
-1. 중복된 이슈는 제거하고 통합
-2. 심각도 순으로 정렬 (Critical > High > Medium > Low)
-3. 각 이슈마다 구체적인 해결 방법 제시
-4. 금융권 보안 규정(전자금융감독규정) 관점에서 평가
-
----
-
-## 📊 SonarQube 분석 결과 ({sonar_total}개 이슈)
-{sonar_data}
-
-## 🔍 CodeQL 분석 결과 ({codeql_total}개 이슈)
-{codeql_data}
-
-## 🎯 Semgrep 분석 결과 ({semgrep_total}개 이슈)
-{semgrep_data}
-
----
-
-**아래 형식으로 마크다운 리포트를 작성하세요:**
-
-# 🔒 통합 보안 분석 리포트
-
-## 📊 전체 요약
-- 총 발견 이슈 수:
-- 심각도별 분포:
-- 주요 취약점 유형:
-
-## 🚨 Critical/High 우선순위 이슈
-(각 이슈마다 아래 포함)
-- **이슈명**:
-- **위험도**:
-- **영향 범위**:
-- **해결 방법**:
-- **관련 규정**: (해당 시)
-
-## ⚠️ Medium 이슈
-
-## ℹ️ Low/Info 이슈
-
-## ✅ 종합 권장사항
-1. 즉시 조치 필요 항목
-2. 단기 개선 항목 (1주 이내)
-3. 중장기 개선 항목
-
-## 📈 보안 점수 평가
-(A~F 등급으로 평가하고 근거 제시)
-"""
-
-    prompt = ChatPromptTemplate.from_template(template)
-
-    # 3. LangChain 파이프라인 구성
-    # prompt → model → text 추출 순서로 자동 실행
-    chain = prompt | model | StrOutputParser()
-
-    # 4. 데이터 준비 및 실행
-    summary = summarize_results(results)
-
-    print("🤖 Claude API 호출 중... (약 10-30초 소요)")
+    print("클로드가 중복 제거 및 SG 요약 생성을 시작합니다...")
 
     try:
-        response = chain.invoke({
-            "sonar_total": summary['sonar']['total'],
-            "sonar_data": json.dumps(summary['sonar']['issues'], indent=2, ensure_ascii=False),
-            "codeql_total": summary['codeql']['total'],
-            "codeql_data": json.dumps(summary['codeql']['issues'], indent=2, ensure_ascii=False),
-            "semgrep_total": summary['semgrep']['total'],
-            "semgrep_data": json.dumps(summary['semgrep']['issues'], indent=2, ensure_ascii=False)
-        })
+        # 분석 실행
+        output_data = chain.invoke({"all_findings": json.dumps(all_findings, ensure_ascii=False)})
+
+        # 결과 검증: summary 필드 확인
+        if "summary" not in output_data:
+            print("경고: 'summary' 필드가 누락되어 기본값으로 설정합니다.")
+            output_data["summary"] = {
+                "tool": "Claude-AI-Analyzer",
+                "tool_version": "3.5",
+                "new_critical": 0,
+                "new_high": 0,
+                "new_medium": 0,
+                "new_low": 0
+            }
+
+        # 5. 결과 저장 (이 파일이 나중에 sg-upload.sh의 소스가 됨)
+        output_path = os.path.join(input_dir, "deduplicated-results.json")
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(output_data, f, indent=2, ensure_ascii=False)
+
+        print(f"✅ SG용 요약 생성 완료! 저장됨: {output_path}")
+        print(f"   - Critical: {output_data['summary'].get('new_critical', 0)}")
+        print(f"   - High: {output_data['summary'].get('new_high', 0)}")
+        print(f"   - Medium: {output_data['summary'].get('new_medium', 0)}")
+        print(f"   - Low: {output_data['summary'].get('new_low', 0)}")
+
     except Exception as e:
-        print(f"❌ Claude API 호출 실패: {e}")
+        print(f"❌ 분석 중 에러 발생: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
-    return response
-
-
-def save_report(report, results_dir):
-    """분석 리포트를 파일로 저장"""
-    output_path = Path(results_dir) / "final-report.md"
-
-    try:
-        with open(output_path, 'w', encoding='utf-8') as f:
-            f.write(report)
-        print(f"\n✅ 리포트 저장 완료: {output_path}")
-    except IOError as e:
-        print(f"❌ 파일 저장 실패: {e}")
-        sys.exit(1)
-
-
-def main():
-    """메인 실행 로직"""
-
-    # 명령행 인자 검증
-    if len(sys.argv) < 2:
-        print("Usage: python llm-analyzer.py <results-directory>")
-        print("Example: python llm-analyzer.py ./scan-results")
-        sys.exit(1)
-
-    results_dir = sys.argv[1]
-
-    # 디렉토리 존재 확인
-    if not os.path.isdir(results_dir):
-        print(f"❌ Error: Directory '{results_dir}' does not exist")
-        sys.exit(1)
-
-    # API 키 확인
-    api_key = os.environ.get('ANTHROPIC_API_KEY')
-    if not api_key:
-        print("❌ Error: ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다")
-        print("설정 방법: export ANTHROPIC_API_KEY='your-api-key'")
-        sys.exit(1)
-
-    print("=" * 80)
-    print("🔐 Dark Mac & Cheese - 통합 보안 분석 시작")
-    print("=" * 80)
-
-    # 1. 결과 파일 로드
-    print("\n📂 보안 스캔 결과 로딩 중...")
-    results = load_results(results_dir)
-    print("   ✓ SonarQube, CodeQL, Semgrep 결과 로드 완료")
-
-    # 2. LangChain으로 분석
-    print("\n🤖 LangChain + Claude 4.5 Sonnet 분석 중...")
-    report = analyze_with_langchain(results, api_key)
-
-    # 3. 결과 출력
-    print("\n" + "=" * 80)
-    print(report)
-    print("=" * 80)
-
-    # 4. 파일 저장
-    save_report(report, results_dir)
-
-    print("\n🎉 분석 완료!")
-
-
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    path = sys.argv[1] if len(sys.argv) > 1 else "scan-results"
+    run_deduplication(path)

@@ -1,102 +1,93 @@
 #!/bin/bash
-set -euo pipefail
 
-# SG API를 통한 티켓 발급 및 S3 업로드 스크립트
+# 1. 재료 준비
+REPORT_FILE=$1
+PR_NUMBER=$2
 
-# 환경변수 검증
-: "${SG_API_URL:?SG_API_URL 환경변수가 필요합니다}"
-: "${SG_API_TOKEN:?SG_API_TOKEN 환경변수가 필요합니다}"
-: "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY 환경변수가 필요합니다}"
-: "${GITHUB_SHA:?GITHUB_SHA 환경변수가 필요합니다}"
-: "${GITHUB_RUN_ID:?GITHUB_RUN_ID 환경변수가 필요합니다}"
+# COMMIT_SHA 환경 변수 설정 (GitHub Actions에서는 GITHUB_SHA, 로컬에서는 git 명령 사용)
+COMMIT_SHA=${GITHUB_SHA:-$(git rev-parse HEAD)}
 
-# 파라미터 검증
-REPORT_FILE="${1:?Usage: $0 <report-file> <pr-number>}"
-PR_NUMBER="${2:?Usage: $0 <report-file> <pr-number>}"
+# 파일의 지문(SHA256)과 크기를 미리 계산해둡니다 (명세서 필수값)
+# macOS와 Linux 모두 호환되도록 수정
+FILE_SHA=$(shasum -a 256 "$REPORT_FILE" 2>/dev/null || sha256sum "$REPORT_FILE" | cut -d' ' -f1)
 
-if [ ! -f "$REPORT_FILE" ]; then
-    echo "❌ Error: Report file not found: $REPORT_FILE"
-    exit 1
+# OS별로 다른 stat 명령어 사용
+if [[ "$OSTYPE" == "darwin"* ]]; then
+  FILE_SIZE=$(stat -f%z "$REPORT_FILE")
+else
+  FILE_SIZE=$(stat -c%s "$REPORT_FILE")
 fi
 
-echo "🔐 Dark Mac & Cheese - SG Report Upload"
-echo "========================================"
-echo "Repository: $GITHUB_REPOSITORY"
-echo "PR Number: $PR_NUMBER"
-echo "Commit SHA: $GITHUB_SHA"
-echo "Run ID: $GITHUB_RUN_ID"
-echo "Report: $REPORT_FILE"
-echo ""
+echo "SG 전송 시작: $REPORT_FILE (Size: $FILE_SIZE, Commit: $COMMIT_SHA)"
 
-# 1. SG API 호출 - 티켓 발급
-echo "📝 Step 1: SG API 티켓 발급 요청 중..."
+# ---------------------------------------------------------
+# STEP 1: Presign (서버한테 파일 올릴 주소 달라고 하기)
+# ---------------------------------------------------------
+PRESIGN_RES=$(curl -s -X POST "$SG_API_URL/v1/evidence/presign" \
+  -H "Authorization: Bearer $SG_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"release_id\": \"sha256:$COMMIT_SHA\",
+    \"env\": \"pr\",
+    \"gate\": \"PR\",
+    \"evidence_type\": \"SAST\",
+    \"artifact_name\": \"report.json\",
+    \"sha256\": \"$FILE_SHA\",
+    \"content_length\": $FILE_SIZE,
+    \"pr_number\": $PR_NUMBER
+  }")
 
-TICKET_RESPONSE=$(curl -s -X POST "$SG_API_URL/api/v1/tickets" \
-    -H "Authorization: Bearer $SG_API_TOKEN" \
-    -H "Content-Type: application/json" \
-    -d "{
-        \"repo\": \"$GITHUB_REPOSITORY\",
-        \"pr_number\": \"$PR_NUMBER\",
-        \"sha\": \"$GITHUB_SHA\",
-        \"run_id\": \"$GITHUB_RUN_ID\",
-        \"workflow\": \"pr-sast\"
-    }")
+# 서버가 준 금고 번호(evidence_id)와 금고 주소(upload_url)를 챙깁니다.
+EVIDENCE_ID=$(echo "$PRESIGN_RES" | jq -r '.evidence_id')
+UPLOAD_URL=$(echo "$PRESIGN_RES" | jq -r '.upload_url')
+S3_KEY=$(echo "$PRESIGN_RES" | jq -r '.s3_key')
 
-# 응답 검증
-if ! echo "$TICKET_RESPONSE" | jq -e '.ticket_id' > /dev/null 2>&1; then
-    echo "❌ Error: Invalid ticket response from SG API"
-    echo "Response: $TICKET_RESPONSE"
-    exit 1
-fi
+# ---------------------------------------------------------
+# STEP 2: S3 Upload (실제 파일 실물을 창고에 넣기)
+# ---------------------------------------------------------
+echo "S3에 전체 리포트 업로드 중..."
+curl -s -X PUT -T "$REPORT_FILE" "$UPLOAD_URL"
 
-TICKET_ID=$(echo "$TICKET_RESPONSE" | jq -r '.ticket_id')
-PRESIGNED_URL=$(echo "$TICKET_RESPONSE" | jq -r '.upload_url')
+# ---------------------------------------------------------
+# STEP 3: Complete (파일 넣었으니 요약 숫자 보고하기)
+# ---------------------------------------------------------
+echo "SG에 최종 요약본(Summary) 보고 중..."
+SUMMARY=$(jq -c '.summary' "$(dirname "$REPORT_FILE")/deduplicated-results.json")
 
-echo "✅ 티켓 발급 완료: $TICKET_ID"
+curl -s -X POST "$SG_API_URL/v1/evidence/complete" \
+  -H "Authorization: Bearer $SG_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"evidence_id\": \"$EVIDENCE_ID\",
+    \"release_id\": \"sha256:$COMMIT_SHA\",
+    \"env\": \"pr\",
+    \"gate\": \"PR\",
+    \"evidence_type\": \"SAST\",
+    \"s3_key\": \"$S3_KEY\",
+    \"sha256\": \"$FILE_SHA\",
+    \"size\": $FILE_SIZE,
+    \"summary\": $SUMMARY,
+    \"pr_number\": $PR_NUMBER,
+    \"issued_at\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"
+  }"
 
-# 티켓 ID를 파일에 저장 (워크플로우에서 사용)
-echo "$TICKET_ID" > /tmp/sg-ticket-id
+# ---------------------------------------------------------
+# STEP 4: Evaluate (판정해달라고 요청하기)
+# ---------------------------------------------------------
+echo "⚖️ 최종 판정(Evaluate) 요청 중..."
+EVAL_RES=$(curl -s -X POST "$SG_API_URL/v1/decisions/evaluate" \
+  -H "Authorization: Bearer $SG_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"release_id\": \"sha256:$COMMIT_SHA\",
+    \"env\": \"pr\",
+    \"gate\": \"PR\",
+    \"context\": { \"pr_number\": $PR_NUMBER, \"commit_sha\": \"$COMMIT_SHA\" }
+  }")
 
-echo ""
+# 판정 결과(PASS/FAIL/PENDING)를 다음 Job에서 볼 수 있게 저장!
+# 명세서상 티켓 ID 대신 decision_id를 저장하거나 결과 전체를 저장 
+echo "$EVAL_RES" | jq -r '.decision_id' > /tmp/sg-ticket-id
+echo "$EVAL_RES" > /tmp/sg-eval-result
 
-# 2. S3에 리포트 업로드 (presigned URL 사용)
-echo "📤 Step 2: S3에 리포트 업로드 중..."
-
-HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-    -X PUT "$PRESIGNED_URL" \
-    -H "Content-Type: application/json" \
-    --data-binary "@$REPORT_FILE")
-
-if [ "$HTTP_STATUS" -ne 200 ]; then
-    echo "❌ Error: S3 upload failed (HTTP $HTTP_STATUS)"
-    exit 1
-fi
-
-echo "✅ 리포트 업로드 완료"
-echo ""
-
-# 3. SG에 업로드 완료 통보
-echo "📢 Step 3: SG에 업로드 완료 통보 중..."
-
-NOTIFY_RESPONSE=$(curl -s -X POST "$SG_API_URL/api/v1/tickets/$TICKET_ID/complete" \
-    -H "Authorization: Bearer $SG_API_TOKEN" \
-    -H "Content-Type: application/json" \
-    -d "{
-        \"status\": \"uploaded\",
-        \"file_size\": $(stat -f%z "$REPORT_FILE" 2>/dev/null || stat -c%s "$REPORT_FILE"),
-        \"checksum\": \"$(sha256sum "$REPORT_FILE" | awk '{print $1}')\"
-    }")
-
-# 응답 검증
-if ! echo "$NOTIFY_RESPONSE" | jq -e '.status' > /dev/null 2>&1; then
-    echo "❌ Error: Invalid notification response from SG API"
-    echo "Response: $NOTIFY_RESPONSE"
-    exit 1
-fi
-
-echo "✅ SG 통보 완료"
-echo ""
-echo "🎉 모든 단계 완료!"
-echo ""
-echo "Ticket ID: $TICKET_ID"
-echo "You can check the verdict status at: $SG_API_URL/tickets/$TICKET_ID"
+echo "모든 전송 및 판정 요청 완료!"
