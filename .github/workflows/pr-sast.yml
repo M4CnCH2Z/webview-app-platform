@@ -95,13 +95,12 @@ jobs:  # 실제 실행될 작업(Job)들
             -Dsonar.sources=apps/api/src,apps/web/src
             -Dsonar.java.binaries=apps/api/build/classes/java/main
 
-      - name: Download SonarQube results  # SonarQube 이슈 결과를 API로 내려받아 파일로 저장
+      - name: Download SonarQube results
         run: |
-          mkdir -p scan-results  # 결과 저장 폴더 생성
-          # SonarQube API를 통해 분석 결과 다운로드
-          curl -u "${{ secrets.SONAR_TOKEN }}:" \  # 토큰 기반 Basic auth(비밀번호 빈 값 형태)
-            "${{ secrets.SONAR_HOST_URL }}/api/issues/search?componentKeys=${{ secrets.SONAR_PROJECT_KEY }}&resolved=false" \  # 미해결 이슈 조회
-            -o scan-results/sonar-results.json  # 결과를 JSON으로 저장. scan-results/sonar-results.json 
+          mkdir -p scan-results
+          curl -u "${{ secrets.SONAR_TOKEN }}:" \
+            "${{ secrets.SONAR_HOST_URL }}/api/issues/search?componentKeys=${{ secrets.SONAR_PROJECT_KEY }}&resolved=false" \
+            -o scan-results/sonar-results.json
 
       - name: Upload SonarQube results  # Sonar 결과 JSON을 아티팩트로 업로드(다른 Job에서 사용)
         uses: actions/upload-artifact@v4
