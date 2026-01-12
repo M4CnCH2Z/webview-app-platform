@@ -164,71 +164,60 @@ jobs:  # 실제 실행될 작업(Job)들
           languages: ${{ matrix.language }}
           queries: security-extended,security-and-quality
 
-    # ===============================================================
-    # Java / Kotlin 전용 설정 -> 빌드 과정을 봐야하므로 따로 분리 
-    # ===============================================================
+      # ===============================================================
+      # Java / Kotlin 전용 설정 -> 빌드 과정을 봐야하므로 따로 분리 
+      # ===============================================================
+      - name: Setup JDK (Java/Kotlin only)
+        if: matrix.language == 'java-kotlin'
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
 
-    - name: Setup JDK (Java/Kotlin only)
-      if: matrix.language == 'java-kotlin'  # Java/Kotlin일 때만 실행
-      uses: actions/setup-java@v4
-      with:
-        distribution: 'temurin'             # OpenJDK 배포판
-        java-version: '21'                  # 검토 기준 JDK 21
-                                            # (17로 두면 21 프로젝트에서 빌드 깨질 수 있음)
+      - name: Build (Java/Kotlin only)
+        if: matrix.language == 'java-kotlin'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Searching for build tools in apps directory..."
+          if [ -f "apps/api/gradlew" ]; then
+            echo "apps/api/gradlew 발견! API 서버 빌드를 시작합니다."
+            chmod +x apps/api/gradlew
+            cd apps/api
+            ./gradlew clean build -x test
+          elif [ -f "apps/android/gradlew" ]; then
+            echo "apps/android/gradlew 발견! 안드로이드 앱 빌드를 시작합니다."
+            chmod +x apps/android/gradlew
+            cd apps/android
+            ./gradlew clean assembleDebug -x test
+          else
+            echo "apps/ 하위 폴더에서 빌드 도구를 찾을 수 없습니다."
+            exit 1
+          fi
 
-    - name: Build (Java/Kotlin only)
-      if: matrix.language == 'java-kotlin'
-      shell: bash
-      run: |
-        set -euo pipefail
-        echo "Searching for build tools in apps directory..."
+      # ===============================================================
+      # JS / TS 전용 설정
+      # ===============================================================
+      - name: Autobuild (JS/TS only)
+        if: matrix.language != 'java-kotlin'
+        uses: github/codeql-action/autobuild@v3
 
-        # 1. apps/api 폴더 확인
-        if [ -f "apps/api/gradlew" ]; then
-          echo "apps/api/gradlew 발견! API 서버 빌드를 시작합니다."
-          chmod +x apps/api/gradlew
-          # -p 옵션은 해당 프로젝트 경로를 지정하여 실행하게 합니다.
-          ./apps/api/gradlew -p apps/api clean build -x test
-        
-        # 2. apps/android 폴더 확인
-        elif [ -f "apps/android/gradlew" ]; then
-          echo "apps/android/gradlew 발견! 안드로이드 앱 빌드를 시작합니다."
-          chmod +x apps/android/gradlew
-          ./apps/android/gradlew -p apps/android clean assembleDebug -x test
-          
-        else
-          echo "apps/ 하위 폴더에서 빌드 도구를 찾을 수 없습니다."
-          exit 1
-        fi
+      # ===============================================================
+      # CodeQL 분석 실행
+      # ===============================================================
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
+          output: scan-results/codeql-${{ matrix.language }}.sarif
+          upload: false
 
-    # ===============================================================
-    # JS / TS 전용 설정
-    # ===============================================================
-
-    - name: Autobuild (JS/TS only)
-      if: matrix.language != 'java-kotlin'  # JS/TS만 autobuild 사용
-      uses: github/codeql-action/autobuild@v3
-                                            # JS/TS는 대부분 자동 빌드로 충분
-    # ===============================================================
-    # CodeQL 분석 실행
-    # ===============================================================
-    - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v3 # 실제 CodeQL 분석 수행
-      with:
-        category: "/language:${{ matrix.language }}"
-                                            # 결과에 언어 태그 부여
-        output: scan-results/codeql-${{ matrix.language }}.sarif
-                                            # 언어별 SARIF 파일 생성
-        upload: false                        # GitHub Security 탭 자동 업로드 비활성화
-
-    - name: Upload CodeQL results
-      uses: actions/upload-artifact@v4      # 다음 Job에서 쓰기 위해 아티팩트로 업로드
-      with:
-        name: codeql-${{ matrix.language }}-results
-                                            # 언어별 아티팩트 이름
-        path: scan-results/codeql-${{ matrix.language }}.sarif
-                                            # 업로드 대상 SARIF
-        retention-days: 7                   # 단기 보관
+      - name: Upload CodeQL results
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeql-${{ matrix.language }}-results
+          path: scan-results/codeql-${{ matrix.language }}.sarif
+          retention-days: 7
 
   # ===================================================================
   # Job 4: 결과 통합 및 Claude 분석 -> 3개 분석 json 결과 합쳐서 중복 제거하기 
