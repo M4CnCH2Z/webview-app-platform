@@ -138,17 +138,25 @@ jobs:  # 실제 실행될 작업(Job)들
 
       - name: Filter Semgrep to Critical/High only
         run: |
-          python3 -c "
+          python3 << 'EOF'
           import json
-          with open('semgrep.sarif') as f:
-              data = json.load(f)
-          # SARIF의 runs[].results[]에서 level이 'error'인 것만 남김
-          for run in data.get('runs', []):
-              if 'results' in run:
-                  run['results'] = [r for r in run['results'] if r.get('level') == 'error']
-          with open('semgrep.sarif', 'w') as f:
-              json.dump(data, f)
-          "
+          import os
+
+          if os.path.exists('semgrep.sarif') and os.path.isfile('semgrep.sarif'):
+              with open('semgrep.sarif') as f:
+                  data = json.load(f)
+
+              # SARIF의 runs[].results[]에서 level이 'error'인 것만 남김
+              for run in data.get('runs', []):
+                  if 'results' in run:
+                      run['results'] = [r for r in run['results'] if r.get('level') == 'error']
+
+              with open('semgrep.sarif', 'w') as f:
+                  json.dump(data, f)
+              print("Filtered semgrep.sarif")
+          else:
+              print("semgrep.sarif not found")
+          EOF
 
       - name: Upload Semgrep results
         uses: actions/upload-artifact@v4
@@ -229,17 +237,27 @@ jobs:  # 실제 실행될 작업(Job)들
 
       - name: Filter CodeQL to Error level only
         run: |
-          python3 -c "
+          python3 << 'EOF'
           import json
-          with open('scan-results/codeql-${{ matrix.language }}.sarif') as f:
-              data = json.load(f)
-          # SARIF의 runs[].results[]에서 level이 'error'인 것만 남김
-          for run in data.get('runs', []):
-              if 'results' in run:
-                  run['results'] = [r for r in run['results'] if r.get('level') == 'error']
-          with open('scan-results/codeql-${{ matrix.language }}.sarif', 'w') as f:
-              json.dump(data, f)
-          "
+          import os
+
+          filepath = 'scan-results/codeql-${{ matrix.language }}.sarif'
+
+          if os.path.exists(filepath) and os.path.isfile(filepath):
+              with open(filepath) as f:
+                  data = json.load(f)
+
+              # SARIF의 runs[].results[]에서 level이 'error'인 것만 남김
+              for run in data.get('runs', []):
+                  if 'results' in run:
+                      run['results'] = [r for r in run['results'] if r.get('level') == 'error']
+
+              with open(filepath, 'w') as f:
+                  json.dump(data, f)
+              print(f"Filtered {filepath}")
+          else:
+              print(f"File not found or is directory: {filepath}")
+          EOF
 
       - name: Upload CodeQL results
         uses: actions/upload-artifact@v4
