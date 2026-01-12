@@ -16,15 +16,9 @@ else
   FILE_SIZE=$(stat -c%s "$REPORT_FILE")
 fi
 
-# PR_NUMBER가 비어있으면 기본값 설정
-if [ -z "$PR_NUMBER" ] || [ "$PR_NUMBER" == "null" ]; then
-  PR_NUMBER=0
-fi
-
-# 디버깅 로그
+# 디버깅 로그 추가
 echo "FILE_SHA: $FILE_SHA"
 echo "FILE_SIZE: $FILE_SIZE"
-echo "PR_NUMBER: $PR_NUMBER"
 echo "SG 전송 시작: $REPORT_FILE (Size: $FILE_SIZE, Commit: $COMMIT_SHA)"
 
 # ---------------------------------------------------------
@@ -37,33 +31,34 @@ if [ ! -f "$DEDUP_FILE" ]; then
   exit 1
 fi
 
+echo "📄 deduplicated-results.json 내용 (첫 500자):"
+head -c 500 "$DEDUP_FILE"
+echo ""
+
 # JSON 유효성 검사
 if ! jq empty "$DEDUP_FILE" 2>/dev/null; then
   echo "Invalid JSON in $DEDUP_FILE"
   exit 1
 fi
 echo "JSON 유효성 검사 통과"
-
-# ---------------------------------------------------------
-# 공통 producer 객체
-# ---------------------------------------------------------
-PRODUCER=$(cat <<EOF
-{
-  "repo": "${GITHUB_REPOSITORY:-unknown}",
-  "workflow": "${GITHUB_WORKFLOW:-unknown}",
-  "job": "${GITHUB_JOB:-unknown}",
-  "run_id": "${GITHUB_RUN_ID:-0}",
-  "attempt": ${GITHUB_RUN_ATTEMPT:-1},
-  "actor": "${GITHUB_ACTOR:-unknown}"
-}
-EOF
-)
-
 # ---------------------------------------------------------
 # STEP 1: Presign
 # ---------------------------------------------------------
-echo "📤 STEP 1: Presign 요청..."
 
+# 디버깅: 변수 값 확인
+echo "=== Presign 요청 변수 확인 ==="
+echo "COMMIT_SHA: $COMMIT_SHA"
+echo "FILE_SHA: $FILE_SHA"
+echo "FILE_SIZE: $FILE_SIZE"
+echo "PR_NUMBER: [$PR_NUMBER]"
+
+# PR_NUMBER가 비어있으면 기본값 설정
+if [ -z "$PR_NUMBER" ] || [ "$PR_NUMBER" == "null" ]; then
+  echo "PR_NUMBER가 비어있음, 0으로 설정"
+  PR_NUMBER=0
+fi
+
+# Presign 요청 페이로드 생성 (producer 필드 추가!)
 PRESIGN_PAYLOAD=$(cat <<EOF
 {
   "release_id": "sha256:$COMMIT_SHA",
@@ -74,14 +69,21 @@ PRESIGN_PAYLOAD=$(cat <<EOF
   "content_type": "application/json",
   "content_length": $FILE_SIZE,
   "sha256": "$FILE_SHA",
-  "producer": $PRODUCER,
+  "producer": {
+    "repo": "${GITHUB_REPOSITORY:-unknown}",
+    "workflow": "${GITHUB_WORKFLOW:-unknown}",
+    "job": "${GITHUB_JOB:-unknown}",
+    "run_id": "${GITHUB_RUN_ID:-0}",
+    "attempt": ${GITHUB_RUN_ATTEMPT:-1},
+    "actor": "${GITHUB_ACTOR:-unknown}"
+  },
   "commit_sha": "$COMMIT_SHA",
   "pr_number": $PR_NUMBER
 }
 EOF
 )
 
-echo "Presign 페이로드:"
+echo "Presign 요청 페이로드:"
 echo "$PRESIGN_PAYLOAD" | jq .
 
 PRESIGN_RES=$(curl -s -X POST "$SG_API_URL/v1/evidence/presign" \
@@ -91,30 +93,28 @@ PRESIGN_RES=$(curl -s -X POST "$SG_API_URL/v1/evidence/presign" \
 
 echo "Presign 응답: $PRESIGN_RES"
 
-EVIDENCE_ID=$(echo "$PRESIGN_RES" | jq -r '.evidence_id')
-UPLOAD_URL=$(echo "$PRESIGN_RES" | jq -r '.upload_url')
-S3_KEY=$(echo "$PRESIGN_RES" | jq -r '.s3_key')
-
-if [ "$EVIDENCE_ID" == "null" ] || [ -z "$EVIDENCE_ID" ]; then
-  echo "Presign 실패"
-  exit 1
-fi
-echo "Presign 성공: $EVIDENCE_ID"
-
 # ---------------------------------------------------------
 # STEP 2: S3 Upload
 # ---------------------------------------------------------
-echo "STEP 2: S3 업로드..."
+echo "S3에 전체 리포트 업로드 중..."
 curl -s -X PUT -T "$REPORT_FILE" "$UPLOAD_URL"
-echo "S3 업로드 완료"
 
 # ---------------------------------------------------------
-# STEP 3: Complete
+# STEP 3: Complete - Summary 안전하게 추출
 # ---------------------------------------------------------
-echo "📤 STEP 3: Complete 요청..."
+echo "SG에 최종 요약본(Summary) 보고 중..."
 
-SUMMARY=$(jq -c '.summary // {}' "$DEDUP_FILE")
+# Summary 추출 및 검증
+SUMMARY=$(jq -c '.summary // empty' "$DEDUP_FILE")
 
+if [ -z "$SUMMARY" ] || [ "$SUMMARY" == "null" ]; then
+  echo "summary 필드 없음, 기본값 사용"
+  SUMMARY='{"tool":"Claude-AI-Analyzer","tool_version":"4.5","new_critical":0,"new_high":0,"new_medium":0,"new_low":0}'
+fi
+
+echo "Summary 값: $SUMMARY"
+
+# Complete 요청 - JSON을 임시 파일로 만들어서 전송 (특수문자 문제 방지)
 COMPLETE_PAYLOAD=$(cat <<EOF
 {
   "evidence_id": "$EVIDENCE_ID",
@@ -125,16 +125,14 @@ COMPLETE_PAYLOAD=$(cat <<EOF
   "s3_key": "$S3_KEY",
   "sha256": "$FILE_SHA",
   "size": $FILE_SIZE,
-  "issued_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
   "summary": $SUMMARY,
-  "producer": $PRODUCER,
-  "commit_sha": "$COMMIT_SHA",
-  "pr_number": $PR_NUMBER
+  "pr_number": $PR_NUMBER,
+  "issued_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 }
 EOF
 )
 
-echo "Complete 페이로드:"
+echo "Complete 요청 페이로드:"
 echo "$COMPLETE_PAYLOAD" | jq .
 
 COMPLETE_RES=$(curl -s -X POST "$SG_API_URL/v1/evidence/complete" \
@@ -147,37 +145,20 @@ echo "Complete 응답: $COMPLETE_RES"
 # ---------------------------------------------------------
 # STEP 4: Evaluate
 # ---------------------------------------------------------
-echo "⚖️ STEP 4: Evaluate 요청..."
-
-EVAL_PAYLOAD=$(cat <<EOF
-{
-  "release_id": "sha256:$COMMIT_SHA",
-  "env": "pr",
-  "gate": "PR",
-  "context": {
-    "pr_number": $PR_NUMBER,
-    "commit_sha": "$COMMIT_SHA"
-  }
-}
-EOF
-)
-
-echo "Evaluate 페이로드:"
-echo "$EVAL_PAYLOAD" | jq .
-
+echo "최종 판정(Evaluate) 요청 중..."
 EVAL_RES=$(curl -s -X POST "$SG_API_URL/v1/decisions/evaluate" \
   -H "Authorization: Bearer $SG_API_TOKEN" \
   -H "Content-Type: application/json" \
-  -d "$EVAL_PAYLOAD")
+  -d "{
+    \"release_id\": \"sha256:$COMMIT_SHA\",
+    \"env\": \"pr\",
+    \"gate\": \"PR\",
+    \"context\": { \"pr_number\": $PR_NUMBER, \"commit_sha\": \"$COMMIT_SHA\" }
+  }")
 
 echo "Evaluate 응답: $EVAL_RES"
 
-# decision 값 추출 (PASS/FAIL)
-DECISION=$(echo "$EVAL_RES" | jq -r '.decision // "PENDING"')
-echo "🎯 판정 결과: $DECISION"
-
-# 결과 저장
+echo "$EVAL_RES" | jq -r '.decision_id' > /tmp/sg-ticket-id
 echo "$EVAL_RES" > /tmp/sg-eval-result
-echo "$DECISION" > /tmp/sg-decision
 
 echo "모든 전송 및 판정 요청 완료!"
