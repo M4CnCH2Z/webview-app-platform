@@ -136,7 +136,7 @@ echo "S3_KEY: $S3_KEY"
 # STEP 2: S3 Upload
 # ---------------------------------------------------------
 echo "S3에 전체 리포트 업로드 중..."
-S3_UPLOAD_RES=$(curl -s -w "\n%{http_code}" -X PUT -T "$REPORT_FILE" "$UPLOAD_URL")
+S3_UPLOAD_RES=$(curl -s -w "\n%{http_code}" -X PUT -H "Content-Type: application/json" -T "$REPORT_FILE" "$UPLOAD_URL")
 S3_HTTP_CODE=$(echo "$S3_UPLOAD_RES" | tail -n1)
 
 if [ "$S3_HTTP_CODE" != "200" ]; then
