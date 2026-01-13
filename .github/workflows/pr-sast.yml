@@ -165,7 +165,7 @@ jobs:  # 실제 실행될 작업(Job)들
         uses: actions/checkout@v4
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
           queries: security-extended,security-and-quality
@@ -206,13 +206,13 @@ jobs:  # 실제 실행될 작업(Job)들
       # ===============================================================
       - name: Autobuild (JS/TS only)
         if: matrix.language != 'java-kotlin'
-        uses: github/codeql-action/autobuild@v3
+        uses: github/codeql-action/autobuild@v4
 
       # ===============================================================
       # CodeQL 분석 실행
       # ===============================================================
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
         with:
           category: "/language:${{ matrix.language }}"
           output: scan-results/codeql-${{ matrix.language }}.sarif
