@@ -8,6 +8,11 @@
 REPORT_FILE=$1
 PR_NUMBER=$2
 
+# 환경변수 매핑 (Secrets 이름과 스크립트 변수 연결)
+SG_API_URL="${SG_API_URL:-$SECURITY_GATE_URL}"
+SG_API_SECRET="${SG_API_SECRET:-$SECURITY_GATE_HMAC_SECRET}"
+
+
 COMMIT_SHA=${GITHUB_SHA:-$(git rev-parse HEAD)}
 
 # 파일의 지문(SHA256) 계산 

@@ -338,11 +338,7 @@ jobs:  # 실제 실행될 작업(Job)들
         id: sg-upload
         env:
           SG_API_URL: ${{ secrets.SECURITY_GATE_URL }}
-          SG_API_TOKEN: ${{ secrets.SECURITY_GATE_HMAC_SECRET }}
-          REPO: ${{ github.repository }}
-          COMMIT_SHA: ${{ github.sha }}
-          WORKFLOW: ${{ github.workflow }}
-          ACTOR: ${{ github.actor }}
+          SG_API_SECRET: ${{ secrets.SECURITY_GATE_HMAC_SECRET }}  
         run: |
           chmod +x .github/scripts/sg-upload.sh
           .github/scripts/sg-upload.sh \
@@ -353,29 +349,33 @@ jobs:  # 실제 실행될 작업(Job)들
         id: sg-verdict
         env:
           SG_API_URL: ${{ secrets.SECURITY_GATE_URL }}
-          SG_API_TOKEN: ${{ secrets.SECURITY_GATE_HMAC_SECRET }}
+          SG_API_SECRET: ${{ secrets.SECURITY_GATE_HMAC_SECRET }}  
         run: |
-          # 1. 업로드 직후의 초기 판정 결과를 파일에서 읽어옵니다. (없으면 PENDING)
           VERDICT=$(jq -r '.decision' /tmp/sg-eval-result 2>/dev/null || echo "PENDING")
           
-          # 2. PENDING일 경우 폴링(5분동안)
           if [ "$VERDICT" == "PENDING" ]; then
             ATTEMPT=0
             while [ $ATTEMPT -lt 30 ]; do
-              # API를 호출해서 현재 커밋의 판정 상태를 가져옵니다.
-              RES=$(curl -s -H "Authorization: Bearer $SG_API_TOKEN" \
-                "$SG_API_URL/v1/releases/sha256:${{ github.sha }}/decisions")
+              # HMAC 서명 생성
+              TIMESTAMP=$(date +%s)
+              PATH_ONLY="/v1/releases/sha256:${{ github.sha }}/decisions"
+              STRING_TO_SIGN="${TIMESTAMP}.GET.${PATH_ONLY}."
+              SIGNATURE=$(echo -n "$STRING_TO_SIGN" | openssl dgst -sha256 -hmac "$SG_API_SECRET" | cut -d' ' -f2)
+              
+              RES=$(curl -s \
+                -H "X-SG-Timestamp: $TIMESTAMP" \
+                -H "X-SG-Signature: $SIGNATURE" \
+                "${SG_API_URL}${PATH_ONLY}")
+              
               VERDICT=$(echo "$RES" | jq -r '.items[0].decision // "PENDING"')
-              # 결과가 PASS나 FAIL로 확정되면 반복문을 빠져나갑니다.
               if [ "$VERDICT" == "PASS" ] || [ "$VERDICT" == "FAIL" ]; then break; fi
-              sleep 10; ATTEMPT=$((ATTEMPT+1)) # 10초 대기 후 다시 시도
+              sleep 10; ATTEMPT=$((ATTEMPT+1))
             done
           fi
 
-          # 3. 결과 저장 (verdict는 소문자로 통일: pass/fail) 대문자를 소문자(pass/fail)로 변환
           FINAL_V=$(echo "$VERDICT" | tr '[:upper:]' '[:lower:]')
-          echo "{\"status\": \"$FINAL_V\"}" > final-input/sg-verdict.json # JSON 파일로 저장
-          echo "verdict=$FINAL_V" >> $GITHUB_OUTPUT # 다음 단계나 다른 Job에서 쓰도록 출력값으로 설정
+          echo "{\"status\": \"$FINAL_V\"}" > final-input/sg-verdict.json
+          echo "verdict=$FINAL_V" >> $GITHUB_OUTPUT
 
       # -------------------------------------------------------------------
       # [핵심] FAIL일 때만 2차 AI 분석 실행
