@@ -386,6 +386,7 @@ jobs:  # 실제 실행될 작업(Job)들
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           # final-report.py가 final-report.md를 생성
+          pip install langchain-anthropic langchain-core   #이거 추가!
           python3 .github/scripts/final-report.py \
             final-input/deduplicated-results.json \
             final-input/sg-verdict.json
