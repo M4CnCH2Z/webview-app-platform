@@ -54,12 +54,14 @@ sg_request() {
   local timestamp=$(date +%s)
   local signature=$(generate_signature "$method" "$path" "$body" "$timestamp")
   
-  echo "=== SG Request Debug ==="
-  echo "Method: $method"
-  echo "Path: $path"
-  echo "Timestamp: $timestamp"
-  echo "Signature: $signature"
+  # 디버그는 stderr로 출력 (>&2 추가)
+  echo "=== SG Request Debug ===" >&2
+  echo "Method: $method" >&2
+  echo "Path: $path" >&2
+  echo "Timestamp: $timestamp" >&2
+  echo "Signature: $signature" >&2
   
+  # curl 결과만 stdout으로 반환
   curl -s -X "$method" "${SG_API_URL}${path}" \
     -H "X-SG-Timestamp: $timestamp" \
     -H "X-SG-Signature: $signature" \
