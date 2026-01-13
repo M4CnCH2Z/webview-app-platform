@@ -53,7 +53,7 @@ Security Gate(SG) 판정 결과 **불합격(FAIL)**이 발생했습니다.
     print("클로드가 최종 시큐어 코딩 가이드를 작성 중입니다...")
 
     try:
-        # 분석 실행 (결과가 마크다운 텍스트이므로 Parser 없이 스트링으로 받음)
+        # 분석 실행 (결과가 마크다운 텍스트이므로 Parser 없이 스트링으로 받음) ㅇㅇ
         response = model.invoke(prompt.format(
             summary=json.dumps(summary, ensure_ascii=False),
             findings=json.dumps(findings, ensure_ascii=False)
