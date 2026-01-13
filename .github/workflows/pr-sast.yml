@@ -409,3 +409,29 @@ jobs:  # 실제 실행될 작업(Job)들
                 body: "## Security Gate 불합격 안내\n\n" + report
               });
             }
+
+      - name: Slack notify (PASS)
+        if: steps.sg-verdict.outputs.verdict == 'pass'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.M4CnCH2Z_BOT_SLACK_WEBHOOK_URL }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number || github.event.inputs.pr_number }}"
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          payload=$(cat << EOF
+          {"text":"[PR SAST] PASS: #${PR_NUMBER} (${GITHUB_REPOSITORY})\nRun: ${RUN_URL}"}
+          EOF
+          )
+          curl -s -X POST -H "Content-type: application/json" --data "$payload" "$SLACK_WEBHOOK_URL"
+
+      - name: Slack notify (FAIL)
+        if: steps.sg-verdict.outputs.verdict == 'fail'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.M4CnCH2Z_BOT_SLACK_WEBHOOK_URL }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number || github.event.inputs.pr_number }}"
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          payload=$(cat << EOF
+          {"text":"[PR SAST] FAIL: #${PR_NUMBER} (${GITHUB_REPOSITORY})\nRun: ${RUN_URL}"}
+          EOF
+          )
+          curl -s -X POST -H "Content-type: application/json" --data "$payload" "$SLACK_WEBHOOK_URL"
