@@ -113,11 +113,11 @@ jobs:  # 실제 실행될 작업(Job)들
         uses: actions/checkout@v4
 
       - name: Install and Run Semgrep
-        #심각도가 'ERROR'(높음)인 문제들을 중점적으로 보기 
         run: |
           pip install semgrep
+          # 명령어 중간에 공백이 들어가지 않도록 주의
           semgrep scan \
-            --config p/security-audit \ 
+            --config p/security-audit \
             --config p/owasp-top-ten \
             --config p/javascript \
             --config p/typescript \
