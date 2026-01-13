@@ -126,8 +126,8 @@ jobs:  # 실제 실행될 작업(Job)들
             --sarif \
             --output semgrep.sarif \
             || true
-        ##env: 토큰 필요없음 
-          ##SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
 
       - name: Filter Semgrep to Critical/High only
         run: |
