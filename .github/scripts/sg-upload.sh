@@ -12,6 +12,7 @@ PR_NUMBER=$2
 SG_API_URL="${SG_API_URL:-$SECURITY_GATE_URL}"
 SG_API_SECRET="${SG_API_SECRET:-$SECURITY_GATE_HMAC_SECRET}"
 COMMIT_SHA=${GITHUB_SHA:-$(git rev-parse HEAD)}
+REPO=${GITHUB_REPOSITORY:-$(git config --get remote.origin.url | sed -n 's#.*/\\(.*\\)\\.git#\\1#p')}
 
 # 파일의 지문(SHA256) 계산 
 FILE_SHA=$(sha256sum "$REPORT_FILE" 2>/dev/null | cut -d' ' -f1 || shasum -a 256 "$REPORT_FILE" | cut -d' ' -f1)
@@ -180,7 +181,7 @@ echo "Complete 응답: $COMPLETE_RES"
 echo "최종 판정(Evaluate) 요청 중..."
 
 EVAL_PAYLOAD=$(cat <<EOF
-{"release_id":"sha256:$FILE_SHA","env":"pr","gate":"PR","context":{"pr_number":$PR_NUMBER,"commit_sha":"$COMMIT_SHA"}}
+{"release_id":"sha256:$FILE_SHA","env":"pr","gate":"PR","context":{"repo":"$REPO","pr_number":$PR_NUMBER,"commit_sha":"$COMMIT_SHA"}}
 EOF
 )
 
