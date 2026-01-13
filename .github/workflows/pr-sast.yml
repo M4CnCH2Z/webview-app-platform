@@ -409,29 +409,3 @@ jobs:  # 실제 실행될 작업(Job)들
                 body: "## Security Gate 불합격 안내\n\n" + report
               });
             }
-
-      # -------------------------------------------------------------------
-      # GitHub Check 생성 (PASS/FAIL에 따라 머지 버튼 제어)
-      # -------------------------------------------------------------------
-      - name: Create GitHub Check
-        if: always()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const verdict = '${{ steps.sg-verdict.outputs.verdict }}';
-            const conclusion = verdict === 'pass' ? 'success' : 'failure';
-            await github.rest.checks.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              name: 'Security Gate Verdict',
-              head_sha: context.payload.pull_request?.head.sha || context.sha,
-              status: 'completed',
-              conclusion: conclusion,
-              output: {
-                title: verdict === 'pass' ? 'Security Gate PASSED' : 'Security Gate FAILED',
-                summary: `SG 판정 결과: **${verdict.toUpperCase()}**`,
-                text: verdict === 'pass' 
-                  ? '보안 게이트를 통과했습니다. 자유롭게 Merge 하세요!' 
-                  : '취약점이 발견되었습니다. 아래 AI 가이드를 확인하여 코드를 수정해 주세요.'
-              }
-            });
