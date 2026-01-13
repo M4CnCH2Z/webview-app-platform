@@ -11,8 +11,6 @@ PR_NUMBER=$2
 # 환경변수 매핑 (Secrets 이름과 스크립트 변수 연결)
 SG_API_URL="${SG_API_URL:-$SECURITY_GATE_URL}"
 SG_API_SECRET="${SG_API_SECRET:-$SECURITY_GATE_HMAC_SECRET}"
-
-
 COMMIT_SHA=${GITHUB_SHA:-$(git rev-parse HEAD)}
 
 # 파일의 지문(SHA256) 계산 
@@ -107,7 +105,7 @@ fi
 
 # Presign 요청 페이로드 생성
 PRESIGN_PAYLOAD=$(cat <<EOF
-{"release_id":"sha256:$COMMIT_SHA","env":"pr","gate":"PR","evidence_type":"SAST","artifact_name":"report.json","content_type":"application/json","content_length":$FILE_SIZE,"sha256":"$FILE_SHA","producer":{"repo":"${GITHUB_REPOSITORY:-unknown}","workflow":"${GITHUB_WORKFLOW:-unknown}","job":"${GITHUB_JOB:-unknown}","run_id":"${GITHUB_RUN_ID:-0}","attempt":${GITHUB_RUN_ATTEMPT:-1},"actor":"${GITHUB_ACTOR:-unknown}"},"commit_sha":"$COMMIT_SHA","pr_number":$PR_NUMBER}
+{"release_id":"sha256:$FILE_SHA","env":"pr","gate":"PR","evidence_type":"SAST","artifact_name":"report.json","content_type":"application/json","content_length":$FILE_SIZE,"sha256":"$FILE_SHA","producer":{"repo":"${GITHUB_REPOSITORY:-unknown}","workflow":"${GITHUB_WORKFLOW:-unknown}","job":"${GITHUB_JOB:-unknown}","run_id":"${GITHUB_RUN_ID:-0}","attempt":${GITHUB_RUN_ATTEMPT:-1},"actor":"${GITHUB_ACTOR:-unknown}"},"commit_sha":"$COMMIT_SHA","pr_number":$PR_NUMBER}
 EOF
 )
 
@@ -163,7 +161,7 @@ echo "Summary 값: $SUMMARY"
 # Complete 요청 페이로드 (한 줄로 - 서명 계산 시 일관성 유지)
 ISSUED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 COMPLETE_PAYLOAD=$(cat <<EOF
-{"evidence_id":"$EVIDENCE_ID","release_id":"sha256:$COMMIT_SHA","env":"pr","gate":"PR","evidence_type":"SAST","s3_key":"$S3_KEY","sha256":"$FILE_SHA","size":$FILE_SIZE,"summary":$SUMMARY,"pr_number":$PR_NUMBER,"issued_at":"$ISSUED_AT"}
+{"evidence_id":"$EVIDENCE_ID","release_id":"sha256:$FILE_SHA","env":"pr","gate":"PR","evidence_type":"SAST","s3_key":"$S3_KEY","sha256":"$FILE_SHA","size":$FILE_SIZE,"summary":$SUMMARY,"pr_number":$PR_NUMBER,"issued_at":"$ISSUED_AT"}
 EOF
 )
 
@@ -180,7 +178,7 @@ echo "Complete 응답: $COMPLETE_RES"
 echo "최종 판정(Evaluate) 요청 중..."
 
 EVAL_PAYLOAD=$(cat <<EOF
-{"release_id":"sha256:$COMMIT_SHA","env":"pr","gate":"PR","context":{"pr_number":$PR_NUMBER,"commit_sha":"$COMMIT_SHA"}}
+{"release_id":"sha256:$FILE_SHA","env":"pr","gate":"PR","context":{"pr_number":$PR_NUMBER,"commit_sha":"$COMMIT_SHA"}}
 EOF
 )
 
