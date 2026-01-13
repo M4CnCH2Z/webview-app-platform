@@ -122,7 +122,7 @@ jobs:  # 실제 실행될 작업(Job)들
             --config p/javascript \
             --config p/typescript \
             --config p/react \
-            --severity ERROR \  
+            --severity ERROR \
             --sarif \
             --output semgrep.sarif \
             . || true
