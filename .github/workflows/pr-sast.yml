@@ -1,0 +1,437 @@
+name: PR SAST Security Scan  # 워크플로우 이름(깃헙 Actions 화면에 표시)
+
+on:  # 워크플로우 트리거 조건
+  pull_request:  # PR 생성/업데이트 시 실행
+    branches:
+      - main  # main 브랜치로 들어오는 PR만 대상
+      #- develop  # (주석) develop도 대상 가능
+      # 테스트 단계라서 push test/sast pr할 때로 변경하기  # 테스트용 브랜치 운영 메모
+  push:
+    branches:
+      - test/sast_pr
+  workflow_dispatch:  # 수동 실행(버튼으로 실행)
+    inputs:
+      pr_number:  # 수동 실행 시 스캔할 PR 번호 입력
+        description: 'PR number to scan'  # 입력값 설명
+        required: true  # 필수 입력
+        type: string  # 문자열로 받음
+
+# PR당 하나의 SAST 워크플로우만 실행  # 같은 PR에서 중복 실행 방지(동시성 제어)
+concurrency:
+  group: pr-sast-${{ github.event.pull_request.number || github.event.inputs.pr_number }}  # PR번호 기준으로 그룹 묶기(수동 실행도 지원)
+  cancel-in-progress: true  # 같은 그룹에서 새 실행이 뜨면 기존 실행 취소(최신만 유지)
+
+permissions:  # 워크플로우가 GitHub API/리포지토리에 접근할 권한
+  contents: read  # 레포 코드 읽기 권한(체크아웃/분석에 필요)
+  pull-requests: write  # PR에 코멘트 작성 권한(결과 요약 댓글)
+  security-events: write  # 보안 이벤트(예: SARIF 업로드)에 필요한 권한(현재는 upload:false지만 확장 대비)
+  checks: write  # GitHub Check 생성 권한(SG verdict를 체크로 표시)
+  actions: read
+jobs:  # 실제 실행될 작업(Job)들
+  # ===================================================================
+  # Job 1: SonarQube 분석
+  # ===================================================================
+  sonarqube:
+    name: SonarQube Analysis  # Job 표시 이름
+    runs-on: ubuntu-latest  # 실행 러너(OS)
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 1. Java 환경 먼저 세팅
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      # 2. 컴파일 실행 (그래야 classes 폴더가 생김)
+      - name: Build Java API
+        run: |
+          cd apps/api
+          chmod +x gradlew
+          ./gradlew compileJava
+
+      - name: Debug - Verify build output
+        run: |
+          echo "=== 빌드 결과 확인 ==="
+          find apps/api/build -name "*.class" 2>/dev/null | head -5 || echo ".class 파일 없음"
+          ls -la apps/api/build/classes/java/main 2>/dev/null || echo "경로 없음"
+
+      # 3. Node 환경 세팅 및 분석 실행
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm  # pnpm 패키지 매니저 설치
+        uses: pnpm/action-setup@v2  # pnpm 설치 액션
+        with:
+          version: 8.15.4  # pnpm 버전 고정(재현성)
+
+      - name: Install dependencies  # 의존성 설치(빌드/분석에 필요)
+        run: pnpm install --no-frozen-lockfile  
+
+      
+      - name: Run SonarQube Scanner
+        uses: sonarsource/sonarqube-scan-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        with:
+          args: >
+            -Dsonar.projectKey=${{ secrets.SONAR_PROJECT_KEY }}
+            -Dsonar.sources=apps/api/src,apps/web/src
+            -Dsonar.java.binaries=apps/api/build/classes/java/main
+
+      - name: Download SonarQube results
+        run: |
+          mkdir -p scan-results
+          # BLOCKER, CRITICAL만 필터링
+          curl -u "${{ secrets.SONAR_TOKEN }}:" \
+            "${{ secrets.SONAR_HOST_URL }}/api/issues/search?componentKeys=${{ secrets.SONAR_PROJECT_KEY }}&resolved=false&severities=BLOCKER,CRITICAL" \
+            -o scan-results/sonar-results.json
+
+      - name: Upload SonarQube results  # Sonar 결과 JSON을 아티팩트로 업로드(다른 Job에서 사용)
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonar-results  # 아티팩트 이름
+          path: scan-results/sonar-results.json  # 업로드할 파일 경로
+          retention-days: 7  # 보관 기간(일)
+  # ===================================================================
+  # Job 2: Semgrep 분석 
+  # ===================================================================
+  semgrep:
+    name: Semgrep Analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install and Run Semgrep
+        run: |
+          pip install semgrep
+          semgrep scan --config p/security-audit --config p/owasp-top-ten --config p/javascript --config p/typescript --config p/react --severity ERROR --sarif --output semgrep.sarif . || true
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+
+      - name: Filter Semgrep to Critical/High only
+        run: |
+          python3 << 'EOF'
+          import json
+          import os
+
+          if os.path.exists('semgrep.sarif') and os.path.isfile('semgrep.sarif'):
+              with open('semgrep.sarif') as f:
+                  data = json.load(f)
+
+              # SARIF의 runs[].results[]에서 level이 'error'인 것만 남김
+              for run in data.get('runs', []):
+                  if 'results' in run:
+                      run['results'] = [r for r in run['results'] if r.get('level') == 'error']
+
+              with open('semgrep.sarif', 'w') as f:
+                  json.dump(data, f)
+              print("Filtered semgrep.sarif")
+          else:
+              print("semgrep.sarif not found")
+          EOF
+
+      - name: Upload Semgrep results
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-results
+          path: semgrep.sarif
+          retention-days: 7
+
+  # ===================================================================
+  # Job 3: CodeQL 분석 (최적화 버전)
+  # ===================================================================
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'javascript-typescript', 'java-kotlin' ]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-extended,security-and-quality
+
+      # ===============================================================
+      # Java / Kotlin 전용 설정 -> 빌드 과정을 봐야하므로 따로 분리 
+      # ===============================================================
+      - name: Setup JDK (Java/Kotlin only)
+        if: matrix.language == 'java-kotlin'
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Build (Java/Kotlin only)
+        if: matrix.language == 'java-kotlin'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Searching for build tools in apps directory..."
+          if [ -f "apps/api/gradlew" ]; then
+            echo "apps/api/gradlew 발견! API 서버 빌드를 시작합니다."
+            chmod +x apps/api/gradlew
+            cd apps/api
+            ./gradlew clean build -x test
+          elif [ -f "apps/android/gradlew" ]; then
+            echo "apps/android/gradlew 발견! 안드로이드 앱 빌드를 시작합니다."
+            chmod +x apps/android/gradlew
+            cd apps/android
+            ./gradlew clean assembleDebug -x test
+          else
+            echo "apps/ 하위 폴더에서 빌드 도구를 찾을 수 없습니다."
+            exit 1
+          fi
+
+      # ===============================================================
+      # JS / TS 전용 설정
+      # ===============================================================
+      - name: Autobuild (JS/TS only)
+        if: matrix.language != 'java-kotlin'
+        uses: github/codeql-action/autobuild@v4
+
+      # ===============================================================
+      # CodeQL 분석 실행
+      # ===============================================================
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"
+          output: scan-results/codeql-${{ matrix.language }}.sarif
+          upload: false
+
+      - name: Filter CodeQL to Error level only
+        run: |
+          python3 << 'EOF'
+          import json
+          import os
+
+          filepath = 'scan-results/codeql-${{ matrix.language }}.sarif'
+
+          if os.path.exists(filepath) and os.path.isfile(filepath):
+              with open(filepath) as f:
+                  data = json.load(f)
+
+              # SARIF의 runs[].results[]에서 level이 'error'인 것만 남김
+              for run in data.get('runs', []):
+                  if 'results' in run:
+                      run['results'] = [r for r in run['results'] if r.get('level') == 'error']
+
+              with open(filepath, 'w') as f:
+                  json.dump(data, f)
+              print(f"Filtered {filepath}")
+          else:
+              print(f"File not found or is directory: {filepath}")
+          EOF
+
+      - name: Upload CodeQL results
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeql-${{ matrix.language }}-results
+          path: scan-results/codeql-${{ matrix.language }}.sarif
+          retention-days: 7
+
+  # ===================================================================
+  # Job 4: 결과 통합 및 Claude 분석 -> 3개 분석 json 결과 합쳐서 중복 제거하기 
+  # ===================================================================
+  analyze-and-deduplicate:
+    name: LLM Deduplication
+    runs-on: ubuntu-latest
+    needs: [sonarqube, semgrep, codeql]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all scan results
+        uses: actions/download-artifact@v4
+        with:
+          path: scan-results
+
+      - name: Final Data Preparation
+        run: |
+          # 1. CodeQL 병합 (여러 언어 결과를 하나로)
+          python3 -c "
+          import json, glob, os
+          sarif_files = glob.glob('scan-results/codeql-*-results/*.sarif')
+          merged = {'runs': []}
+          for f in sarif_files:
+              with open(f) as file:
+                  data = json.load(file)
+                  merged['runs'].extend(data.get('runs', []))
+          with open('scan-results/codeql-results.json', 'w') as out:
+              json.dump(merged, out)
+          "
+          # 2. SonarQube와 Semgrep 파일들을 scan-results 루트로 이동 및 이름 통일
+          # 중복 명령어를 피하기 위해 여기서 한 번에 처리 
+          mv scan-results/sonar-results/sonar-results.json scan-results/sonar-results.json || true
+          mv scan-results/semgrep-results/semgrep.sarif scan-results/semgrep-results.json || true
+          
+          # 3. 불필요한 빈 폴더 삭제 및 확인
+          find scan-results -type d -empty -delete
+          echo "=== LLM 분석용 입력 파일 목록 ==="
+          ls -la scan-results/*.json
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          pip install langchain-anthropic langchain-core
+
+      - name: Run Claude Deduplicator
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          # llm-analyzer.py가 scan-results 내부의 json들을 읽어 deduplicated-results.json을 만듭니다.
+          python3 .github/scripts/llm-analyzer.py scan-results
+
+      - name: Upload Deduplicated JSON
+        uses: actions/upload-artifact@v4
+        with:
+          name: deduplicated-data
+          path: scan-results/deduplicated-results.json
+          retention-days: 7
+
+  # ===================================================================
+  # Job 5: SG 전송, 판정 대기, 그리고 FAIL 시에만 AI 리포트 생성
+  # ===================================================================
+  upload-to-sg:
+    name: SG Verdict & Final Report
+    runs-on: ubuntu-latest
+    needs: [analyze-and-deduplicate] 
+    # verdict 결과를 체크 생성 시 활용하기 위해 outputs 설정
+    outputs:
+      verdict: ${{ steps.sg-verdict.outputs.verdict }} # 이 Job에서 나온 결과값(pass/fail)을 다른 Job에서도 쓸 수 있게 내보냄 
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download Deduplicated JSON
+        uses: actions/download-artifact@v4
+        with:
+          name: deduplicated-data 
+          path: final-input # 'final-input' 폴더에 다운로드
+
+      - name: Upload to SG & Get Decision
+        id: sg-upload
+        env:
+          SG_API_URL: ${{ secrets.SECURITY_GATE_URL }}
+          SG_API_SECRET: ${{ secrets.SECURITY_GATE_HMAC_SECRET }}  
+        run: |
+          chmod +x .github/scripts/sg-upload.sh
+          .github/scripts/sg-upload.sh \
+            final-input/deduplicated-results.json \
+            "${{ github.event.pull_request.number || github.event.inputs.pr_number }}"
+
+      - name: Wait for SG verdict (Polling)
+        id: sg-verdict
+        env:
+          SG_API_URL: ${{ secrets.SECURITY_GATE_URL }}
+          SG_API_SECRET: ${{ secrets.SECURITY_GATE_HMAC_SECRET }}  
+        run: |
+          VERDICT=$(jq -r '.decision' /tmp/sg-eval-result 2>/dev/null || echo "PENDING")
+          
+          if [ "$VERDICT" == "PENDING" ]; then
+            ATTEMPT=0
+            while [ $ATTEMPT -lt 30 ]; do
+              # HMAC 서명 생성
+              TIMESTAMP=$(date +%s)
+              PATH_ONLY="/v1/releases/sha256:${{ github.sha }}/decisions"
+              STRING_TO_SIGN="${TIMESTAMP}.GET.${PATH_ONLY}."
+              SIGNATURE=$(echo -n "$STRING_TO_SIGN" | openssl dgst -sha256 -hmac "$SG_API_SECRET" | cut -d' ' -f2)
+              
+              RES=$(curl -s \
+                -H "X-SG-Timestamp: $TIMESTAMP" \
+                -H "X-SG-Signature: $SIGNATURE" \
+                "${SG_API_URL}${PATH_ONLY}")
+              
+              VERDICT=$(echo "$RES" | jq -r '.items[0].decision // "PENDING"')
+              if [ "$VERDICT" == "PASS" ] || [ "$VERDICT" == "FAIL" ]; then break; fi
+              sleep 10; ATTEMPT=$((ATTEMPT+1))
+            done
+          fi
+
+          FINAL_V=$(echo "$VERDICT" | tr '[:upper:]' '[:lower:]')
+          echo "{\"status\": \"$FINAL_V\"}" > final-input/sg-verdict.json
+          echo "verdict=$FINAL_V" >> $GITHUB_OUTPUT
+
+      # -------------------------------------------------------------------
+      # [핵심] FAIL일 때만 2차 AI 분석 실행
+      # -------------------------------------------------------------------
+      - name: Final AI Analysis (Only on FAIL)
+        if: steps.sg-verdict.outputs.verdict == 'fail'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          # final-report.py가 final-report.md를 생성
+          pip install langchain-anthropic langchain-core   #이거 추가!
+          python3 .github/scripts/final-report.py \
+            final-input/deduplicated-results.json \
+            final-input/sg-verdict.json
+
+      # -------------------------------------------------------------------
+      # [핵심] FAIL일 때만 PR 댓글 작성
+      # -------------------------------------------------------------------
+      - name: Comment PR with AI Guide
+        if: github.event_name == 'pull_request' && steps.sg-verdict.outputs.verdict == 'fail'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            if (fs.existsSync('final-report.md')) {
+              const report = fs.readFileSync('final-report.md', 'utf8');
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                body: "## Security Gate 불합격 안내\n\n" + report
+              });
+            }
+
+      - name: Slack notify (PASS)
+        if: steps.sg-verdict.outputs.verdict == 'pass'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.M4CnCH2Z_BOT_SLACK_WEBHOOK_URL }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number || github.event.inputs.pr_number }}"
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          payload=$(cat << EOF
+          {"text":"[PR SAST] PASS: #${PR_NUMBER} (${GITHUB_REPOSITORY})\nRun: ${RUN_URL}"}
+          EOF
+          )
+          curl -s -X POST -H "Content-type: application/json" --data "$payload" "$SLACK_WEBHOOK_URL"
+
+      - name: Slack notify (FAIL)
+        if: steps.sg-verdict.outputs.verdict == 'fail'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.M4CnCH2Z_BOT_SLACK_WEBHOOK_URL }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number || github.event.inputs.pr_number }}"
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          payload=$(cat << EOF
+          {"text":"[PR SAST] FAIL: #${PR_NUMBER} (${GITHUB_REPOSITORY})\nRun: ${RUN_URL}"}
+          EOF
+          )
+          curl -s -X POST -H "Content-type: application/json" --data "$payload" "$SLACK_WEBHOOK_URL"

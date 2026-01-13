@@ -1,0 +1,363 @@
+name: API Build & Deploy (Staging)
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'api/**'
+      - '!api/**.md'           # api 폴더 내 md 파일은 제외
+      - '!deploy/values-staging.yaml'  # values 파일 변경은 제외 (promote PR 재실행 방지)
+
+env:
+  AWS_REGION: ap-northeast-2
+  ECR_REPOSITORY: dark-mac-cheese-api
+  MANIFEST_FILE: deploy/values-staging.yaml
+  AWS_ROLE_ARN: arn:aws:iam::763479270202:role/GitHubActionsECRRole
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    outputs:
+      image_digest: ${{ steps.build-image.outputs.digest }}
+      gate_passed: ${{ steps.evaluate-gate.outputs.passed }}
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Build with Gradle
+        working-directory: ./api
+        run: |
+          chmod +x gradlew
+          ./gradlew clean bootJar -x test
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }} 
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and Push Docker Image
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        working-directory: ./api
+        run: |
+          echo "🏗️ 골든 이미지를 사용하여 Docker 빌드를 시작합니다..."
+          
+          docker build \
+            --build-arg ECR_REGISTRY=$ECR_REGISTRY \
+            --build-arg GOLDEN_TAG=1.0.0 \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          
+          # Push 후 digest 추출
+          PUSH_OUTPUT=$(docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG)
+          
+          # Digest만 추출 (sha256:xxx 형태)
+          FULL_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG)
+          DIGEST_ONLY=$(echo $FULL_DIGEST | cut -d'@' -f2)
+          
+          echo "📦 Full Image: $FULL_DIGEST"
+          echo "🔑 Digest: $DIGEST_ONLY"
+          
+          # Output 설정
+          echo "digest=$DIGEST_ONLY" >> $GITHUB_OUTPUT
+          echo "full_image=$FULL_DIGEST" >> $GITHUB_OUTPUT
+          
+          # 환경변수도 설정 (후속 step에서 사용)
+          echo "IMAGE_DIGEST=$DIGEST_ONLY" >> $GITHUB_ENV
+          echo "FULL_IMAGE=$FULL_DIGEST" >> $GITHUB_ENV
+
+      # ─────────────────────────────────────────────────────
+      # Security Scanning & Gate
+      # ─────────────────────────────────────────────────────
+      
+      - name: Run Trivy Image Scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}'
+          format: 'json'
+          output: 'trivy-image-scan.json'
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+
+      - name: Generate SBOM
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}'
+          format: 'cyclonedx'
+          output: 'sbom.json'
+
+      - name: Upload Image Scan to Security Gate
+        id: upload-scan
+        env:
+          SECURITY_GATE_URL: ${{ secrets.SECURITY_GATE_URL }}
+          SECURITY_GATE_HMAC_SECRET: ${{ secrets.SECURITY_GATE_HMAC_SECRET }}
+        run: |
+          chmod +x .github/scripts/scan_upload.sh
+          
+          # IMAGE_SCAN 업로드 (PR이 아니므로 pr_number=0)
+          .github/scripts/scan_upload.sh trivy-image-scan.json 0 "${{ env.IMAGE_DIGEST }}"
+
+      - name: Upload SBOM to Security Gate
+        env:
+          SECURITY_GATE_URL: ${{ secrets.SECURITY_GATE_URL }}
+          SECURITY_GATE_HMAC_SECRET: ${{ secrets.SECURITY_GATE_HMAC_SECRET }}
+        run: |
+          chmod +x .github/scripts/sbom_upload.sh
+          
+          # SBOM 업로드
+          .github/scripts/sbom_upload.sh sbom.json 0 "${{ env.IMAGE_DIGEST }}"
+
+      - name: Evaluate Security Gate
+        id: evaluate-gate
+        env:
+          SECURITY_GATE_URL: ${{ secrets.SECURITY_GATE_URL }}
+          SECURITY_GATE_HMAC_SECRET: ${{ secrets.SECURITY_GATE_HMAC_SECRET }}
+        run: |
+          echo "🔍 Security Gate 평가 중..."
+          
+          TIMESTAMP=$(date +%s)
+          EVAL_PATH="/v1/decisions/evaluate"
+          
+          # API 스펙에 맞는 Request Body
+          EVAL_BODY=$(cat <<EOF
+          {
+            "release_id": "${{ env.IMAGE_DIGEST }}",
+            "env": "staging",
+            "gate": "STAGING",
+            "context": {
+              "commit_sha": "${{ github.sha }}",
+              "repository": "${{ github.repository }}",
+              "actor": "${{ github.actor }}",
+              "run_id": "${{ github.run_id }}"
+            }
+          }
+          EOF
+          )
+          # JSON 압축 (줄바꿈 제거)
+          EVAL_BODY=$(echo "$EVAL_BODY" | jq -c '.')
+          
+          # HMAC 서명 생성
+          SIGNATURE=$(echo -n "${TIMESTAMP}.POST.${EVAL_PATH}.${EVAL_BODY}" | \
+            openssl dgst -sha256 -hmac "$SECURITY_GATE_HMAC_SECRET" | cut -d' ' -f2)
+          
+          # Evaluate API 호출
+          EVAL_RESPONSE=$(curl -s -X POST "${SECURITY_GATE_URL}${EVAL_PATH}" \
+            -H "X-SG-Timestamp: $TIMESTAMP" \
+            -H "X-SG-Signature: $SIGNATURE" \
+            -H "Content-Type: application/json" \
+            -d "$EVAL_BODY")
+          
+          echo "Gate Response: $EVAL_RESPONSE"
+          
+          # 결과 파싱 (API 스펙: decision = "PASS" | "FAIL")
+          DECISION=$(echo "$EVAL_RESPONSE" | jq -r '.decision // "UNKNOWN"')
+          DECISION_ID=$(echo "$EVAL_RESPONSE" | jq -r '.decision_id // ""')
+          POLICY_VERSION=$(echo "$EVAL_RESPONSE" | jq -r '.policy_version // ""')
+          REASONS=$(echo "$EVAL_RESPONSE" | jq -c '.reasons // []')
+          REQUIRED_EVIDENCE=$(echo "$EVAL_RESPONSE" | jq -c '.required_evidence // []')
+          
+          echo "📊 Decision: $DECISION"
+          echo "🆔 Decision ID: $DECISION_ID"
+          echo "📋 Policy Version: $POLICY_VERSION"
+          
+          # PASS/FAIL 판정
+          if [ "$DECISION" == "PASS" ]; then
+            GATE_PASSED="true"
+          else
+            GATE_PASSED="false"
+            echo "❌ Gate 실패 사유:"
+            echo "$EVAL_RESPONSE" | jq '.reasons[]'
+          fi
+          
+          # Output 설정
+          echo "decision=$DECISION" >> $GITHUB_OUTPUT
+          echo "decision_id=$DECISION_ID" >> $GITHUB_OUTPUT
+          echo "passed=$GATE_PASSED" >> $GITHUB_OUTPUT
+          
+          # 환경변수 설정
+          echo "GATE_PASSED=$GATE_PASSED" >> $GITHUB_ENV
+          echo "GATE_DECISION=$DECISION" >> $GITHUB_ENV
+          echo "GATE_DECISION_ID=$DECISION_ID" >> $GITHUB_ENV
+          echo "GATE_REASONS<<EOF" >> $GITHUB_ENV
+          echo "$REASONS" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      # ─────────────────────────────────────────────────────
+      # Gate FAIL 시: Slack 알림
+      # ─────────────────────────────────────────────────────
+      
+      - name: Notify Slack on Gate Failure
+        if: env.GATE_PASSED != 'true'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          echo "❌ Security Gate FAILED - Slack 알림 전송"
+          
+          # reasons 배열을 읽기 좋게 포맷팅
+          REASONS_TEXT=$(echo '${{ env.GATE_REASONS }}' | jq -r '.[] | "• \(.code): \(.message)"' 2>/dev/null || echo "• 상세 사유 없음")
+          
+          if [ -n "$SLACK_WEBHOOK_URL" ]; then
+            curl -X POST "$SLACK_WEBHOOK_URL" \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"text\": \"🚨 Security Gate FAILED\",
+                \"blocks\": [
+                  {
+                    \"type\": \"header\",
+                    \"text\": {
+                      \"type\": \"plain_text\",
+                      \"text\": \"🚨 Security Gate 검증 실패\"
+                    }
+                  },
+                  {
+                    \"type\": \"section\",
+                    \"fields\": [
+                      {\"type\": \"mrkdwn\", \"text\": \"*Repository:*\n${{ github.repository }}\"},
+                      {\"type\": \"mrkdwn\", \"text\": \"*Decision:*\n${{ env.GATE_DECISION }}\"},
+                      {\"type\": \"mrkdwn\", \"text\": \"*Commit:*\n\`${{ github.sha }}\`\"},
+                      {\"type\": \"mrkdwn\", \"text\": \"*Actor:*\n${{ github.actor }}\"}
+                    ]
+                  },
+                  {
+                    \"type\": \"section\",
+                    \"text\": {
+                      \"type\": \"mrkdwn\",
+                      \"text\": \"*Image Digest:*\n\`${{ env.IMAGE_DIGEST }}\`\"
+                    }
+                  },
+                  {
+                    \"type\": \"section\",
+                    \"text\": {
+                      \"type\": \"mrkdwn\",
+                      \"text\": \"*실패 사유:*\n${REASONS_TEXT}\"
+                    }
+                  },
+                  {
+                    \"type\": \"actions\",
+                    \"elements\": [
+                      {
+                        \"type\": \"button\",
+                        \"text\": {\"type\": \"plain_text\", \"text\": \"📋 Workflow 보기\"},
+                        \"url\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"
+                      }
+                    ]
+                  }
+                ]
+              }"
+          else
+            echo "⚠️ SLACK_WEBHOOK_URL이 설정되지 않았습니다"
+          fi
+
+      - name: Gate Failure Summary
+        if: env.GATE_PASSED != 'true'
+        run: |
+          echo "::error::Security Gate FAILED - Staging Promote PR이 생성되지 않습니다."
+          echo ""
+          echo "## ❌ Security Gate 검증 실패" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| 항목 | 값 |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-----|" >> $GITHUB_STEP_SUMMARY
+          echo "| Image Digest | \`${{ env.IMAGE_DIGEST }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Decision | **${{ env.GATE_DECISION }}** |" >> $GITHUB_STEP_SUMMARY
+          echo "| Decision ID | \`${{ env.GATE_DECISION_ID }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 실패 사유" >> $GITHUB_STEP_SUMMARY
+          echo '```json' >> $GITHUB_STEP_SUMMARY
+          echo '${{ env.GATE_REASONS }}' | jq '.' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "보안 취약점을 수정한 후 다시 시도해주세요." >> $GITHUB_STEP_SUMMARY
+          
+          exit 1  # 워크플로우 실패 처리
+
+      # ─────────────────────────────────────────────────────
+      # Gate PASS 시: Staging Promote PR 생성
+      # ─────────────────────────────────────────────────────
+      
+      - name: Update Staging Manifest
+        if: env.GATE_PASSED == 'true'
+        run: |
+          echo "✅ Security Gate PASSED - Manifest 업데이트"
+          
+          # yq 설치
+          wget -q https://github.com/mikefarah/yq/releases/download/v4.40.5/yq_linux_amd64 -O /tmp/yq
+          chmod +x /tmp/yq
+          
+          # values-staging.yaml 업데이트 (digest로 고정)
+          /tmp/yq e -i ".image.digest = \"${{ env.IMAGE_DIGEST }}\"" ${{ env.MANIFEST_FILE }}
+          /tmp/yq e -i ".image.tag = \"${{ github.sha }}\"" ${{ env.MANIFEST_FILE }}
+          
+          echo "📝 Updated ${{ env.MANIFEST_FILE }}:"
+          cat ${{ env.MANIFEST_FILE }}
+
+      - name: Create Staging Promote PR
+        if: env.GATE_PASSED == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore(staging): promote API image ${{ github.sha }}"
+          title: "🚀 Deploy(Staging): Promote API Image"
+          body: |
+            ## Staging 배포 요청
+            
+            Security Gate 검증을 통과한 이미지입니다.
+            
+            ### 📦 이미지 정보
+            | 항목 | 값 |
+            |------|-----|
+            | Repository | `${{ env.ECR_REPOSITORY }}` |
+            | Tag | `${{ github.sha }}` |
+            | Digest | `${{ env.IMAGE_DIGEST }}` |
+            
+            ### ✅ Security Gate
+            - **Decision:** ${{ env.GATE_DECISION }}
+            - **Decision ID:** `${{ env.GATE_DECISION_ID }}`
+            
+            ### 🔗 Links
+            - [Workflow Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            - [Commit](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})
+            
+            ---
+            > 이 PR을 머지하면 Staging 환경에 자동 배포됩니다.
+          branch: "deploy/staging-api-${{ github.sha }}"
+          base: "main"
+          delete-branch: true
+          labels: |
+            deployment
+            staging
+            auto-generated
+
+      - name: Success Summary
+        if: env.GATE_PASSED == 'true'
+        run: |
+          echo "## ✅ Build & Security Gate 성공" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| 항목 | 값 |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-----|" >> $GITHUB_STEP_SUMMARY
+          echo "| Image | \`${{ env.ECR_REPOSITORY }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tag | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Digest | \`${{ env.IMAGE_DIGEST }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Decision | **${{ env.GATE_DECISION }}** |" >> $GITHUB_STEP_SUMMARY
+          echo "| Decision ID | \`${{ env.GATE_DECISION_ID }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Staging Promote PR이 생성되었습니다." >> $GITHUB_STEP_SUMMARY

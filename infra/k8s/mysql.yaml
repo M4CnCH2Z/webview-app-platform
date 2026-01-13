@@ -23,7 +23,7 @@ spec:
           value: "root1234"
         - name: MYSQL_DATABASE
           value: "shoppingmall"
-        volumeMounts:
+        volumeMounts: # 데이터 영속화를 위한 볼륨 마운트. 컨테이너 내부의 어느 경로에 마운트할지 지정
         - name: mysql-storage
           mountPath: /var/lib/mysql
         resources:

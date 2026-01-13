@@ -1,0 +1,117 @@
+# name: Main CI/CD to ECR
+
+# on:
+#   push:
+#     branches: [ main, kaniko-migration ]
+
+# permissions:
+#   id-token: write
+#   contents: write
+
+# env:
+#   AWS_REGION: ap-northeast-2
+#   ECR_WEB: shoppingmall-web
+#   ECR_API: shoppingmall-api
+#   AWS_ROLE: arn:aws:iam::763479270202:role/GitHubActionsECRRole
+
+# jobs:
+#   detect-changes:
+#     runs-on: ubuntu-latest
+#     outputs:
+#       web: ${{ steps.filter.outputs.web }}
+#       api: ${{ steps.filter.outputs.api }}
+#     steps:
+#       - uses: actions/checkout@v4
+#       - id: filter
+#         uses: dorny/paths-filter@v3
+#         with:
+#           filters: |
+#             web: ['apps/web/**']
+#             api: ['apps/api/**']
+
+#   build-api:
+#     needs: detect-changes
+#     if: needs.detect-changes.outputs.api == 'true'
+#     runs-on: ci-runner
+#     steps:
+#       - uses: actions/checkout@v4
+
+#       - name: Configure AWS credentials
+#         uses: aws-actions/configure-aws-credentials@v2
+#         with:
+#           aws-region: ${{ env.AWS_REGION }}
+#           role-to-assume: ${{ env.AWS_ROLE }}
+
+#       - name: Create Kaniko Config
+#         run: |
+#           mkdir -p /home/runner/.docker
+#           echo '{"credsStore":"ecr-login"}' > /home/runner/.docker/config.json
+
+#       - name: Build and Push with Kaniko
+#         env:
+#           DOCKER_CONFIG: /home/runner/.docker
+#         run: |
+#           kaniko \
+#             --context "${{ github.workspace }}/apps/api" \
+#             --dockerfile "${{ github.workspace }}/apps/api/Dockerfile" \
+#             --destination "763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/${{ env.ECR_API }}:${{ github.sha }}" \
+#             --destination "763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/${{ env.ECR_API }}:latest" \
+#             --cache=true \
+#             --cache-repo "763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/${{ env.ECR_API }}/cache"
+
+#   build-web:
+#     needs: detect-changes
+#     if: needs.detect-changes.outputs.web == 'true'
+#     runs-on: ci-runner
+#     steps:
+#       - uses: actions/checkout@v4
+
+#       - name: Configure AWS credentials
+#         uses: aws-actions/configure-aws-credentials@v2
+#         with:
+#           aws-region: ${{ env.AWS_REGION }}
+#           role-to-assume: ${{ env.AWS_ROLE }}
+
+#       - name: Create Kaniko Config
+#         run: |
+#           mkdir -p /home/runner/.docker
+#           echo '{"credsStore":"ecr-login"}' > /home/runner/.docker/config.json
+
+#       - name: Build and Push with Kaniko
+#         env:
+#           DOCKER_CONFIG: /home/runner/.docker
+#         run: |
+#           kaniko \
+#             --context "${{ github.workspace }}/apps/web" \
+#             --dockerfile "${{ github.workspace }}/apps/web/Dockerfile" \
+#             --destination "763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/${{ env.ECR_WEB }}:${{ github.sha }}" \
+#             --destination "763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/${{ env.ECR_WEB }}:latest" \
+#             --cache=true \
+#             --cache-repo "763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/${{ env.ECR_WEB }}/cache"
+
+
+#   update-manifest:
+#     needs: [detect-changes, build-api, build-web]
+#     if: |
+#       always() &&
+#       !cancelled() &&
+#       (needs.build-api.result == 'success' || needs.build-web.result == 'success')
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@v4
+#       - name: Update kustomization.yaml
+#         run: |
+#           cd infra/k8s
+#           if [ "${{ needs.detect-changes.outputs.api }}" == "true" ]; then
+#             sed -i "/shoppingmall-api/,/newTag:/ s|newTag:.*|newTag: ${{ github.sha }}|" kustomization.yaml
+#           fi
+#           if [ "${{ needs.detect-changes.outputs.web }}" == "true" ]; then
+#             sed -i "/shoppingmall-web/,/newTag:/ s|newTag:.*|newTag: ${{ github.sha }}|" kustomization.yaml
+#           fi
+#       - name: Commit and Push
+#         run: |
+#           git config --global user.name "github-actions[bot]"
+#           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+#           git add infra/k8s/kustomization.yaml
+#           git commit -m "Update image tags to ${{ github.sha }}" || echo "No changes to commit"
+#           git push

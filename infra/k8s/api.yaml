@@ -17,15 +17,6 @@ spec:
       labels:
         app: my-api
     spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: my-api
-  template:
-    metadata:
-      labels:
-        app: my-api
-    spec:
       containers:
       - name: my-api
         image: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-api:latest
@@ -34,7 +25,7 @@ spec:
         env:
         # --- 추가 및 수정된 부분 ---
         - name: SPRING_PROFILES_ACTIVE
-          value: "staging"  # 로컬이 아닌 staging 프로필 사용
+          value: "local"  # 임시로 local 프로필 사용
         - name: SPRING_DATA_REDIS_HOST
           value: "redis"    # 아까 배포한 redis 서비스 이름
         - name: SPRING_DATA_REDIS_PORT
@@ -50,6 +41,14 @@ spec:
           value: root
         - name: SPRING_DATASOURCE_PASSWORD
           value: root1234
+        - name: JWT_SECRET
+          value: "staging_jwt_secret_key_32_chars_minimum_value_for_security"
+        - name: AWS_ACCESS_KEY
+          value: "dummy"
+        - name: AWS_SECRET_KEY
+          value: "dummy"
+        - name: AWS_S3_BUCKET
+          value: "dummy-bucket"
         volumeMounts:
         - name: log-dir
           mountPath: /app/logs

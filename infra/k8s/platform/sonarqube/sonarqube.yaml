@@ -1,0 +1,244 @@
+# SonarQube on EKS(Postgres in-cluster) + Ingress(ALB)
+# Namespace: ci-system (이미 있다고 가정)
+
+# Secret : DB 계정/비번을 매니패스트 하드코딩 대신 secret으로 분리 
+apiVersion: v1
+kind: Secret
+metadata:
+  name: sonar-db-secret
+  namespace: ci-system
+type: Opaque 
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: ci-system
+spec:
+  accessModes:
+    - ReadWriteOnce # 블록 스토리지(EBS) 기본 모드: 단일 Pod/노드에서 RW
+  resources: 
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: ci-system
+spec:
+  replicas: 1                    # DB는 기본적으로 단일 인스턴스로 운영(HA는 RDS 등으로 분리할 때)
+  selector:   # deployment가 내가 관리할 pod를 고르는 조건임. 찾는 조건.  
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:  # deployment가 앞으로 만들 pod에 붙여줄 실제 라벨임. 붙여주는 값. 
+        app: postgres # 쿠버네티스가 내부적으로 pod 묶기 위한 식별자. 이 pod는 postgres 계열이라는 스티커. 
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15 # 가벼운 postgres:15-alpine도 가능함 
+          envFrom:
+            - secretRef:
+                name: sonar-db-secret      # Secret에서 DB/유저/비번 주입
+          ports:
+            - containerPort: 5432
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          volumeMounts:
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql/data  # Postgres 데이터 디렉토리
+              subPath: pgdata #????
+      volumes:
+        - name: postgres-storage
+          persistentVolumeClaim:
+            claimName: postgres-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+  namespace: ci-system
+spec:
+  type: ClusterIP   # DB는 외부 노출 필요 없음
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sonarqube-data-pvc
+  namespace: ci-system
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sonarqube-extensions-pvc
+  namespace: ci-system
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sonarqube-logs-pvc
+  namespace: ci-system
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sonarqube
+  namespace: ci-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sonarqube
+  template:
+    metadata:
+      labels:
+        app: sonarqube
+    spec:
+      securityContext:
+        fsGroup: 1000 # PVC 마운트 디렉토리에 그룹 쓰기권한 부여 -> Permission denied 방지
+      initContainers:
+        - name: init-sysctl
+          image: busybox:1.32
+          command: ["sysctl", "-w", "vm.max_map_count=262144"]
+          securityContext:
+            privileged: true # 커널 값을 수정해야 하므로 관리자 권한 필요
+      
+      containers:
+        - name: sonarqube
+          image: sonarqube:10-community # SonarQube 10 커뮤니티 버전 이미지
+          ports:
+            - containerPort: 9000 # 컨테이너 내부에서 9000 포트 사용 (웹 UI)
+
+          # Postgres 연결
+          env:
+            - name: SONAR_JDBC_URL
+              value: jdbc:postgresql://postgres-service:5432/sonar
+            - name: SONAR_JDBC_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: sonar-db-secret
+                  key: POSTGRES_USER
+            - name: SONAR_JDBC_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: sonar-db-secret
+                  key: POSTGRES_PASSWORD
+
+            # ES bootstrap 체크 우회. 운영에선 노드 sysctl(vm.max_map_count) 맞추는 게 정석이지만,일단 구동 우선이면 이 옵션으로 쉽게 띄울 수 있음.
+            - name: SONAR_ES_BOOTSTRAP_CHECKS_DISABLE
+              value: "true"
+
+          # SonarQube는 부팅이 느릴 수 있음 → 프로브 넉넉히
+          readinessProbe:
+            httpGet:
+              path: /api/system/status
+              port: 9000
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+
+          livenessProbe:
+            httpGet:
+              path: /api/system/status
+              port: 9000
+            periodSeconds: 10
+            failureThreshold: 60
+
+          resources:
+            requests:
+              cpu: "1"
+              memory: 3Gi
+            limits:
+              cpu: "2"
+              memory: 6Gi
+
+          volumeMounts:
+            - name: sonar-data
+              mountPath: /opt/sonarqube/data
+            - name: sonar-extensions
+              mountPath: /opt/sonarqube/extensions
+            - name: sonar-logs
+              mountPath: /opt/sonarqube/logs
+
+      volumes:
+        - name: sonar-data
+          persistentVolumeClaim:
+            claimName: sonarqube-data-pvc
+        - name: sonar-extensions
+          persistentVolumeClaim:
+            claimName: sonarqube-extensions-pvc
+        - name: sonar-logs
+          persistentVolumeClaim:
+            claimName: sonarqube-logs-pvc
+---
+apiVersion: v1
+kind: Service # Pod 접근용 네트워크 추상화 
+metadata: 
+  name: sonarqube-service # Service 이름 (Ingress나 다른 리소스에서 참조)
+  namespace: ci-system 
+spec:
+  type: ClusterIP     # Ingress 뒤에 붙일 때는 ClusterIP가 정석
+  selector:
+    app: sonarqube
+  ports:
+    - port: 9000                   
+      targetPort: 9000             
+---
+apiVersion: networking.k8s.io/v1 #Ingress 리소스의 최신 API 버전 
+kind: Ingress # 외부/내부 트래픽을 Service로 라우팅하는 리소스 
+metadata:
+  name: sonarqube-ingress #Ingress 이름
+  namespace: ci-system  #ci-system 네임스페이스에 생성 
+  annotations:
+    # ALB를 internal 로 생성 -> vpc 내부에서만 접근 가능 (사내망/프라이빗망용) 
+    alb.ingress.kubernetes.io/scheme: internet-facing             # 사내망(internal) ALB. 현재 테스트 위해 internet-facing으로 설정해둠. 추후 변경해야함 
+    alb.ingress.kubernetes.io/target-type: ip               # Pod IP로 직접 라우팅(권장)
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]' # 80 리슨 (HTTPS 추가 가능)
+    alb.ingress.kubernetes.io/healthcheck-path: /api/system/status
+spec:
+  ingressClassName: alb # <--정식 관리소 이름 지정 
+  rules:
+    # 호스트 지정이 없으므로 alb로 들어오는 모든 요청을 이 규칙으로 처리함 
+    - http: 
+        paths:
+          - path: /
+            # "/" 이하 모든 경로 매칭 
+            pathType: Prefix
+            # Prefix: /, /api, /projects 등 전부 매칭
+            backend:
+              service:
+                name: sonarqube-service # 트래픽을 전달할 Kubernetes Service 이름
+                port:
+                  number: 9000  # Service의 포트 (sonarqube-service:9000)

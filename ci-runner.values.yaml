@@ -1,0 +1,15 @@
+githubConfigSecret: github-token
+githubConfigUrl: https://github.com/M4CnCH2Z
+runnerScaleSetName: ci-runner
+
+# ✅ 핵심: 러너 1개만
+minRunners: 0
+maxRunners: 1
+
+template:
+  spec:
+    serviceAccountName: devsecops-runners-gha-rs-no-permission
+    containers:
+    - name: runner
+      image: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/github-runner-devsecops:latest
+      imagePullPolicy: Always

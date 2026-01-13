@@ -17,13 +17,17 @@ server:
       include-binding-errors: never
 
 spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.amqp.RabbitAutoConfiguration
+
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     # [보안] 로컬이더라도 SSL 사용 설정을 습관화 (실제 연결 실패 시 useSSL=false로 조정)
     url: jdbc:mysql://localhost:3307/shoppingmall?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul
     username: shopuser
     password: shop1234
-  
+
   main:
     allow-bean-definition-overriding: true
     

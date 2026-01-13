@@ -1,0 +1,390 @@
+name: PR SAST Security Scan
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - test/sast_pr
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to scan'
+        required: true
+        type: string
+
+concurrency:
+  group: pr-sast-${{ github.event.pull_request.number || github.event.inputs.pr_number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  security-events: write
+  checks: write
+
+jobs:
+  # ===================================================================
+  # Job 1: SonarQube 분석
+  # ===================================================================
+  sonarqube:
+    name: SonarQube Analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8.15.4
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Run SonarQube Scanner
+        uses: sonarsource/sonarqube-scan-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+      - name: Download SonarQube results
+        run: |
+          mkdir -p scan-results
+          curl -u "${{ secrets.SONAR_TOKEN }}:" \
+            "${{ secrets.SONAR_HOST_URL }}/api/issues/search?componentKeys=${{ secrets.SONAR_PROJECT_KEY }}&resolved=false" \
+            -o scan-results/sonar-results.json
+
+      - name: Upload SonarQube results
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonar-results
+          path: scan-results/sonar-results.json
+          retention-days: 7
+
+  # ===================================================================
+  # Job 2: Semgrep 분석
+  # ===================================================================
+  semgrep:
+    name: Semgrep Analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        run: |
+          mkdir -p scan-results
+          pip install semgrep
+          semgrep \
+            --config "p/security-audit" \
+            --config "p/owasp-top-ten" \
+            --config "p/javascript" \
+            --config "p/typescript" \
+            --config "p/react" \
+            --json -o scan-results/semgrep-results.json
+
+      - name: Upload Semgrep results
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-results
+          path: scan-results/semgrep-results.json
+          retention-days: 7
+
+  # ===================================================================
+  # Job 3: CodeQL 분석
+  # ===================================================================
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        language: [ 'javascript', 'java-kotlin' ]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-extended,security-and-quality
+
+      # ===============================================================
+      # Java / Kotlin 전용 설정
+      # ===============================================================
+      - name: Setup JDK (Java/Kotlin only)
+        if: matrix.language == 'java-kotlin'
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Build (Java/Kotlin only)
+        if: matrix.language == 'java-kotlin'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "🔎 Detecting Java build tool..."
+
+          # Android 프로젝트 감지
+          if [ -f "apps/android/gradlew" ]; then
+            echo "Android Gradle wrapper detected"
+            cd apps/android
+            chmod +x ./gradlew
+            ./gradlew clean assembleDebug -x test
+
+          elif [ -f "./gradlew" ]; then
+            echo "Gradle wrapper detected"
+            chmod +x ./gradlew
+            ./gradlew clean build -x test
+
+          elif [ -f "./mvnw" ]; then
+            echo "Maven wrapper detected"
+            chmod +x ./mvnw
+            ./mvnw -B -DskipTests package
+
+          elif [ -f "pom.xml" ]; then
+            echo "pom.xml detected (system mvn)"
+            mvn -B -DskipTests package
+
+          else
+            echo "No Java build tool found"
+            exit 1
+          fi
+
+      # ===============================================================
+      # JS / TS 전용 설정
+      # ===============================================================
+      - name: Autobuild (JS/TS only)
+        if: matrix.language != 'java-kotlin'
+        uses: github/codeql-action/autobuild@v3
+
+      # ===============================================================
+      # CodeQL 분석 실행
+      # ===============================================================
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
+          output: scan-results/codeql-${{ matrix.language }}.sarif
+          upload: false
+
+      - name: Upload CodeQL results
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeql-${{ matrix.language }}-results
+          path: scan-results/codeql-${{ matrix.language }}.sarif
+          retention-days: 7
+
+  # ===================================================================
+  # Job 4: 결과 통합 및 Claude 분석
+  # ===================================================================
+  analyze-and-report:
+    name: AI Analysis & Report
+    runs-on: ubuntu-latest
+    needs: [sonarqube, semgrep, codeql]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all scan results
+        uses: actions/download-artifact@v4
+        with:
+          path: scan-results
+
+      - name: Merge CodeQL results
+        run: |
+          python3 -c "
+          import json
+          import glob
+
+          sarif_files = glob.glob('scan-results/codeql-*-results/*.sarif')
+          merged = {'runs': []}
+
+          for f in sarif_files:
+              with open(f) as file:
+                  data = json.load(file)
+                  merged['runs'].extend(data.get('runs', []))
+
+          with open('scan-results/codeql-results.sarif', 'w') as out:
+              json.dump(merged, out, indent=2)
+          "
+
+      - name: Reorganize results
+        run: |
+          mv scan-results/sonar-results/sonar-results.json scan-results/ || true
+          mv scan-results/semgrep-results/semgrep-results.json scan-results/ || true
+          ls -la scan-results/
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          pip install langchain-anthropic langchain-core
+
+      - name: Run Claude AI Analysis
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          chmod +x .github/scripts/llm-analyzer.py
+          python3 .github/scripts/llm-analyzer.py scan-results
+
+      - name: Upload final report
+        uses: actions/upload-artifact@v4
+        with:
+          name: final-security-report
+          path: scan-results/final-report.md
+          retention-days: 30
+
+      - name: Comment PR with summary
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('scan-results/final-report.md', 'utf8');
+            const summary = report.split('## 📊 전체 요약')[1]?.split('##')[0] || report.substring(0, 2000);
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: `## 🔒 보안 분석 완료\n\n${summary}\n\n📄 전체 리포트는 Artifacts에서 확인하세요.`
+            });
+
+  # ===================================================================
+  # Job 5: SG API 티켓 발급 및 S3 업로드
+  # ===================================================================
+  upload-to-sg:
+    name: Upload to Security Gate
+    runs-on: ubuntu-latest
+    needs: [analyze-and-report]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download final report
+        uses: actions/download-artifact@v4
+        with:
+          name: final-security-report
+          path: reports
+
+      - name: Upload to SG via API
+        env:
+          SG_API_URL: ${{ secrets.SG_API_URL }}
+          SG_API_TOKEN: ${{ secrets.SG_API_TOKEN }}
+        run: |
+          chmod +x .github/scripts/sg-upload.sh
+          .github/scripts/sg-upload.sh \
+            reports/final-report.md \
+            ${{ github.event.pull_request.number || github.event.inputs.pr_number }}
+
+      - name: Wait for SG verdict
+        id: sg-verdict
+        env:
+          SG_API_URL: ${{ secrets.SG_API_URL }}
+          SG_API_TOKEN: ${{ secrets.SG_API_TOKEN }}
+        run: |
+          TICKET_ID=$(cat /tmp/sg-ticket-id 2>/dev/null || echo "unknown")
+          MAX_ATTEMPTS=30
+          ATTEMPT=0
+
+          echo "⏳ SG 판정 대기 중... (Ticket: $TICKET_ID)"
+
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            VERDICT=$(curl -s -H "Authorization: Bearer $SG_API_TOKEN" \
+              "$SG_API_URL/api/v1/tickets/$TICKET_ID/verdict" | jq -r '.status')
+
+            if [ "$VERDICT" == "pass" ] || [ "$VERDICT" == "fail" ]; then
+              echo "✅ SG 판정 완료: $VERDICT"
+              echo "verdict=$VERDICT" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+
+            echo "  ... 대기 중 ($((ATTEMPT+1))/$MAX_ATTEMPTS)"
+            sleep 10
+            ATTEMPT=$((ATTEMPT+1))
+          done
+
+          echo "❌ Timeout: SG 판정을 받지 못했습니다"
+          echo "verdict=timeout" >> $GITHUB_OUTPUT
+          exit 1
+
+      - name: Create GitHub Check
+        uses: actions/github-script@v7
+        if: always()
+        with:
+          script: |
+            const verdict = '${{ steps.sg-verdict.outputs.verdict }}';
+            const conclusion = verdict === 'pass' ? 'success' : 'failure';
+
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'Security Gate Verdict',
+              head_sha: context.payload.pull_request?.head.sha || context.sha,
+              status: 'completed',
+              conclusion: conclusion,
+              output: {
+                title: verdict === 'pass' ? '✅ Security Gate PASSED' : '❌ Security Gate FAILED',
+                summary: `SG 판정: **${verdict.toUpperCase()}**`,
+                text: verdict === 'pass'
+                  ? '보안 분석 통과. Merge 가능합니다.'
+                  : '보안 이슈 발견. 해결 후 재시도하세요.'
+              }
+            });
+
+  # ===================================================================
+  # Job 6: 최종 결과 요약
+  # ===================================================================
+  summary:
+    name: Workflow Summary
+    runs-on: ubuntu-latest
+    needs: [upload-to-sg]
+    if: always()
+
+    steps:
+      - name: Generate summary
+        run: |
+          cat << 'EOF' >> $GITHUB_STEP_SUMMARY
+          # 🔒 PR SAST 보안 스캔 완료
+
+          ## 📊 실행 결과
+
+          | 단계 | 상태 |
+          |------|------|
+          | SonarQube | ${{ needs.sonarqube.result }} |
+          | Semgrep | ${{ needs.semgrep.result }} |
+          | CodeQL | ${{ needs.codeql.result }} |
+          | AI Analysis | ${{ needs.analyze-and-report.result }} |
+          | SG Upload | ${{ needs.upload-to-sg.result }} |
+
+          ## 📄 다음 단계
+
+          1. Artifacts에서 `final-security-report` 다운로드
+          2. Critical/High 이슈 검토
+          3. 필요 시 코드 수정 후 재푸시
+          4. SG 판정 PASS 시 merge 가능
+
+          ---
+
+          🤖 Generated by Dark Mac & Cheese Security Pipeline
+          EOF
