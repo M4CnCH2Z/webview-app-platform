@@ -14,7 +14,7 @@ on:  # 워크플로우 트리거 조건
       pr_number:  # 수동 실행 시 스캔할 PR 번호 입력
         description: 'PR number to scan'  # 입력값 설명
         required: true  # 필수 입력
-        type: string  # 문자열로 받음
+        type: string  
 
 # PR당 하나의 SAST 워크플로우만 실행  # 같은 PR에서 중복 실행 방지(동시성 제어)
 concurrency:
