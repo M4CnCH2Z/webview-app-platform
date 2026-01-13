@@ -117,7 +117,7 @@ jobs:  # 실제 실행될 작업(Job)들
         run: |
           pip install semgrep
           semgrep scan \
-            --config p/security-audit \
+            --config p/security-audit \ 
             --config p/owasp-top-ten \
             --config p/javascript \
             --config p/typescript \
@@ -125,7 +125,7 @@ jobs:  # 실제 실행될 작업(Job)들
             --severity ERROR \  
             --sarif \
             --output semgrep.sarif \
-            || true
+            . || true
         env:
           SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
 
