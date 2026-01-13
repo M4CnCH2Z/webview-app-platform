@@ -55,18 +55,11 @@ jobs:  # 실제 실행될 작업(Job)들
           chmod +x gradlew
           ./gradlew compileJava
 
-          #if [ -f "apps/api/gradlew" ]; then
-          #  chmod +x apps/api/gradlew
-          #  ./apps/api/gradlew -p apps/api compileJava
-          #else
-          #  echo "Gradle wrapper not found"
-          #  exit 1 # 파일이 없으면 에러를 내고 멈추는 게 안전합니다.
-          #fi
       - name: Debug - Verify build output
         run: |
           echo "=== 빌드 결과 확인 ==="
-          find apps/api/build -name "*.class" 2>/dev/null | head -5 || echo "❌ .class 파일 없음"
-          ls -la apps/api/build/classes/java/main 2>/dev/null || echo "❌ 경로 없음"
+          find apps/api/build -name "*.class" 2>/dev/null | head -5 || echo ".class 파일 없음"
+          ls -la apps/api/build/classes/java/main 2>/dev/null || echo "경로 없음"
 
       # 3. Node 환경 세팅 및 분석 실행
       - name: Setup Node.js
@@ -80,10 +73,9 @@ jobs:  # 실제 실행될 작업(Job)들
           version: 8.15.4  # pnpm 버전 고정(재현성)
 
       - name: Install dependencies  # 의존성 설치(빌드/분석에 필요)
-        run: pnpm install --no-frozen-lockfile  # lockfile 고정 강제 안 함(환경/lock mismatch 허용)
+        run: pnpm install --no-frozen-lockfile  
 
       
-
       - name: Run SonarQube Scanner
         uses: sonarsource/sonarqube-scan-action@master
         env:
@@ -121,6 +113,7 @@ jobs:  # 실제 실행될 작업(Job)들
         uses: actions/checkout@v4
 
       - name: Install and Run Semgrep
+        #심각도가 'ERROR'(높음)인 문제들을 중점적으로 보기 
         run: |
           pip install semgrep
           semgrep scan \
@@ -129,12 +122,12 @@ jobs:  # 실제 실행될 작업(Job)들
             --config p/javascript \
             --config p/typescript \
             --config p/react \
-            --severity ERROR \
+            --severity ERROR \  
             --sarif \
             --output semgrep.sarif \
             || true
-        env:
-          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+        ##env: 토큰 필요없음 
+          ##SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
 
       - name: Filter Semgrep to Critical/High only
         run: |
