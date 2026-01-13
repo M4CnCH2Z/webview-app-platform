@@ -163,7 +163,7 @@ echo "Summary 값: $SUMMARY"
 # Complete 요청 페이로드 (한 줄로 - 서명 계산 시 일관성 유지)
 ISSUED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 COMPLETE_PAYLOAD=$(cat <<EOF
-{"evidence_id":"$EVIDENCE_ID","release_id":"sha256:$FILE_SHA","env":"pr","gate":"PR","evidence_type":"SAST","s3_key":"$S3_KEY","sha256":"$FILE_SHA","size":$FILE_SIZE,"summary":$SUMMARY,"pr_number":$PR_NUMBER,"issued_at":"$ISSUED_AT"}
+{"evidence_id":"$EVIDENCE_ID","release_id":"sha256:$FILE_SHA","env":"pr","gate":"PR","evidence_type":"SAST","s3_key":"$S3_KEY","sha256":"$FILE_SHA","size":$FILE_SIZE,"issued_at":"$ISSUED_AT","parser_version":"1.0.0","summary":$SUMMARY,"producer":{"repo":"${GITHUB_REPOSITORY:-unknown}","workflow":"${GITHUB_WORKFLOW:-unknown}","job":"${GITHUB_JOB:-unknown}","run_id":"${GITHUB_RUN_ID:-0}","attempt":${GITHUB_RUN_ATTEMPT:-1},"actor":"${GITHUB_ACTOR:-unknown}"},"commit_sha":"$COMMIT_SHA","pr_number":$PR_NUMBER}
 EOF
 )
 
