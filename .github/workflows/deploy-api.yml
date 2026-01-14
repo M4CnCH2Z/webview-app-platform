@@ -125,6 +125,9 @@ jobs:
           
           # SBOM 업로드
           .github/scripts/sbom-upload.sh sbom.json 0 "${{ env.IMAGE_DIGEST }}"
+      
+      - name: Wait for Evidence Processing
+        run: sleep 15
 
       - name: Evaluate Security Gate
         id: evaluate-gate
@@ -208,7 +211,7 @@ jobs:
       - name: Notify Slack on Gate Failure
         if: env.GATE_PASSED != 'true'
         env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_URL: ${{ secrets.M4CNCH2Z_BOT_SLACK_WEBHOOK_URL }}
         run: |
           echo "Security Gate FAILED - Slack 알림 전송"
           
