@@ -142,7 +142,7 @@ jobs:
           {
             "release_id": "${{ env.IMAGE_DIGEST }}",
             "env": "staging",
-            "gate": "STAGING_PROMOTE"
+            "gate": "STAGING_PROMOTE",
             "context": {
               "commit_sha": "${{ github.sha }}",
               "repository": "${{ github.repository }}",
