@@ -5,8 +5,8 @@ on:
     branches: [ "main" ]
     paths:
       - 'apps/api/**'
-      - 'apps/api/**.md'           # api 폴더 내 md 파일은 제외
-      - '!deploy/values-staging.yaml'  # values 파일 변경은 제외 (promote PR 재실행 방지)
+      - 'apps/api/**.md'
+      - '!deploy/values-staging.yaml'
 
 env:
   AWS_REGION: ap-northeast-2
@@ -105,29 +105,48 @@ jobs:
           format: 'cyclonedx'
           output: 'sbom.json'
 
+      # 👇 [변경 1] reporting_errors 해결을 위해 상세 정보 변수 추가
       - name: Upload Image Scan to Security Gate
         id: upload-scan
         env:
           SECURITY_GATE_URL: ${{ secrets.SECURITY_GATE_URL }}
           SECURITY_GATE_HMAC_SECRET: ${{ secrets.SECURITY_GATE_HMAC_SECRET }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_WORKFLOW: ${{ github.workflow }}
+          GITHUB_JOB: ${{ github.job }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_ACTOR: ${{ github.actor }}
         run: |
           chmod +x .github/scripts/scan-upload.sh
-          
-          # IMAGE_SCAN 업로드 (PR이 아니므로 pr_number=0)
           .github/scripts/scan-upload.sh trivy-image-scan.json 0 "${{ env.IMAGE_DIGEST }}"
 
+      # 👇 [변경 2] reporting_errors 해결을 위해 상세 정보 변수 추가 (SBOM도 동일)
       - name: Upload SBOM to Security Gate
         env:
           SECURITY_GATE_URL: ${{ secrets.SECURITY_GATE_URL }}
           SECURITY_GATE_HMAC_SECRET: ${{ secrets.SECURITY_GATE_HMAC_SECRET }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_WORKFLOW: ${{ github.workflow }}
+          GITHUB_JOB: ${{ github.job }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_ACTOR: ${{ github.actor }}
         run: |
           chmod +x .github/scripts/sbom-upload.sh
-          
-          # SBOM 업로드
           .github/scripts/sbom-upload.sh sbom.json 0 "${{ env.IMAGE_DIGEST }}"
       
+      # 👇 [추가] 스캔 결과 및 SBOM을 GitHub Artifact로 저장 (항상 실행)
+      - name: Save Scan Results as Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-scan-results
+          path: |
+            trivy-image-scan.json
+            sbom.json
+          retention-days: 7
+
       - name: Wait for Evidence Processing
         run: sleep 15
 
@@ -142,7 +161,6 @@ jobs:
           TIMESTAMP=$(date +%s)
           EVAL_PATH="/v1/decisions/evaluate"
           
-
           EVAL_BODY=$(cat <<EOF
           {
             "release_id": "${{ env.IMAGE_DIGEST }}",
@@ -157,14 +175,11 @@ jobs:
           }
           EOF
           )
-          # JSON 압축 (줄바꿈 제거)
           EVAL_BODY=$(echo "$EVAL_BODY" | jq -c '.')
           
-          # HMAC 서명 생성
           SIGNATURE=$(echo -n "${TIMESTAMP}.POST.${EVAL_PATH}.${EVAL_BODY}" | \
             openssl dgst -sha256 -hmac "$SECURITY_GATE_HMAC_SECRET" | cut -d' ' -f2)
           
-          # Evaluate API 호출
           EVAL_RESPONSE=$(curl -s -X POST "${SECURITY_GATE_URL}${EVAL_PATH}" \
             -H "X-SG-Timestamp: $TIMESTAMP" \
             -H "X-SG-Signature: $SIGNATURE" \
@@ -173,18 +188,13 @@ jobs:
           
           echo "Gate Response: $EVAL_RESPONSE"
           
-          # 결과 파싱 (API 스펙: decision = "PASS" | "FAIL")
           DECISION=$(echo "$EVAL_RESPONSE" | jq -r '.decision // "UNKNOWN"')
           DECISION_ID=$(echo "$EVAL_RESPONSE" | jq -r '.decision_id // ""')
           POLICY_VERSION=$(echo "$EVAL_RESPONSE" | jq -r '.policy_version // ""')
           REASONS=$(echo "$EVAL_RESPONSE" | jq -c '.reasons // []')
-          REQUIRED_EVIDENCE=$(echo "$EVAL_RESPONSE" | jq -c '.required_evidence // []')
           
           echo "Decision: $DECISION"
-          echo "Decision ID: $DECISION_ID"
-          echo "Policy Version: $POLICY_VERSION"
           
-          # PASS/FAIL 판정
           if [ "$DECISION" == "PASS" ]; then
             GATE_PASSED="true"
           else
@@ -193,12 +203,10 @@ jobs:
             echo "$EVAL_RESPONSE" | jq '.reasons[]'
           fi
           
-          # Output 설정
           echo "decision=$DECISION" >> $GITHUB_OUTPUT
           echo "decision_id=$DECISION_ID" >> $GITHUB_OUTPUT
           echo "passed=$GATE_PASSED" >> $GITHUB_OUTPUT
           
-          # 환경변수 설정
           echo "GATE_PASSED=$GATE_PASSED" >> $GITHUB_ENV
           echo "GATE_DECISION=$DECISION" >> $GITHUB_ENV
           echo "GATE_DECISION_ID=$DECISION_ID" >> $GITHUB_ENV
@@ -217,7 +225,6 @@ jobs:
         run: |
           echo "Security Gate FAILED - Slack 알림 전송"
           
-          # reasons 배열을 읽기 좋게 포맷팅
           REASONS_TEXT=$(echo '${{ env.GATE_REASONS }}' | jq -r '.[] | "• \(.code): \(.message)"' 2>/dev/null || echo "• 상세 사유 없음")
           
           if [ -n "$SLACK_WEBHOOK_URL" ]; then
@@ -293,7 +300,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "보안 취약점을 수정한 후 다시 시도해주세요." >> $GITHUB_STEP_SUMMARY
           
-          exit 1  # 워크플로우 실패 처리
+          exit 1
 
       # ─────────────────────────────────────────────────────
       # Gate PASS 시: Staging Promote PR 생성
@@ -303,12 +310,8 @@ jobs:
         if: env.GATE_PASSED == 'true'
         run: |
           echo "Security Gate PASSED - Manifest 업데이트"
-          
-          # yq 설치
           wget -q https://github.com/mikefarah/yq/releases/download/v4.40.5/yq_linux_amd64 -O /tmp/yq
           chmod +x /tmp/yq
-          
-          # values-staging.yaml 업데이트 (digest로 고정)
           /tmp/yq e -i ".image.digest = \"${{ env.IMAGE_DIGEST }}\"" ${{ env.MANIFEST_FILE }}
           /tmp/yq e -i ".image.tag = \"${{ github.sha }}\"" ${{ env.MANIFEST_FILE }}
           
