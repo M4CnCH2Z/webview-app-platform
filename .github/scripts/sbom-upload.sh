@@ -33,7 +33,16 @@ if [ -z "$TARGET_DIGEST" ]; then
   exit 1
 fi
 
-RELEASE_ID="$TARGET_DIGEST"
+# 접두사(sha256:) 확인 및 강제 부착 로직
+if [[ "$TARGET_DIGEST" == sha256:* ]]; then
+  # 이미 접두사가 있으면 그대로 사용
+  RELEASE_ID="$TARGET_DIGEST"
+else
+  # 접두사가 없으면 붙여줌
+  echo "⚠️  Digest에 'sha256:' 접두사가 없어 자동으로 추가합니다."
+  RELEASE_ID="sha256:$TARGET_DIGEST"
+fi
+
 echo "[SBOM] Release ID: $RELEASE_ID"
 
 # ---------------------------------------------------------
@@ -234,14 +243,27 @@ COMPLETE_PAYLOAD=$(jq -n \
   }')
 
 COMPLETE_RES=$(sg_request "POST" "/v1/evidence/complete" "$COMPLETE_PAYLOAD")
+
+# Complete 응답 검증
+echo "Complete 응답:"
+echo "$COMPLETE_RES"
+
 STATUS=$(echo "$COMPLETE_RES" | jq -r '.status // empty')
 
+if [ -z "$STATUS" ]; then
+  echo " Error: Complete API가 status를 반환하지 않았습니다"
+  echo "Full Response: $COMPLETE_RES"
+  exit 1
+fi
+
 if [ "$STATUS" != "RECORDED" ]; then
-  echo "Complete 응답:"
-  echo "$COMPLETE_RES"
+  echo " Warning: Evidence가 제대로 기록되지 않았을 수 있습니다"
+  echo "Expected status: RECORDED, Got: $STATUS"
+  exit 1
 fi
 
 echo ""
 echo "SBOM 전송 완료!"
 echo "   Evidence ID: $EVIDENCE_ID"
+echo "   Status: $STATUS"
 echo "   Format: $SBOM_FORMAT, Components: $COMPONENT_COUNT"

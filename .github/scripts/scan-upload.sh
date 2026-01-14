@@ -1,14 +1,14 @@
 #!/bin/bash
 
 # =============================================================================
-# Security Gate Upload Script (Trivy Image Scan)
+# Security Gate Upload Script (Trivy Image Scan) - Final Schema Version
 # =============================================================================
 
 set -e
 
 REPORT_FILE=$1
 PR_NUMBER=$2
-TARGET_DIGEST=$3  # Docker Image Digest (필수)
+TARGET_DIGEST=$3 
 
 # 환경변수
 SG_API_URL="${SECURITY_GATE_URL}"
@@ -33,7 +33,16 @@ if [ -z "$TARGET_DIGEST" ]; then
   exit 1
 fi
 
-RELEASE_ID="$TARGET_DIGEST"
+# 접두사(sha256:) 확인 및 강제 부착 로직
+if [[ "$TARGET_DIGEST" == sha256:* ]]; then
+  # 이미 접두사가 있으면 그대로 사용
+  RELEASE_ID="$TARGET_DIGEST"
+else
+  # 접두사가 없으면 붙여줌
+  echo "⚠️  Digest에 'sha256:' 접두사가 없어 자동으로 추가합니다."
+  RELEASE_ID="sha256:$TARGET_DIGEST"
+fi
+
 echo "[Image Scan] Release ID: $RELEASE_ID"
 
 # ---------------------------------------------------------
@@ -47,7 +56,7 @@ else
   FILE_SHA=$(sha256sum "$REPORT_FILE" | cut -d' ' -f1)
 fi
 
-echo "📄 파일: $REPORT_FILE (Size: $FILE_SIZE)"
+echo "파일: $REPORT_FILE (Size: $FILE_SIZE)"
 
 # ---------------------------------------------------------
 # 3. HMAC 서명 함수
@@ -75,9 +84,8 @@ sg_request() {
 }
 
 # ---------------------------------------------------------
-# 4. [핵심] Environment / Gate 자동 결정 로직
+# 4. Environment / Gate 결정
 # ---------------------------------------------------------
-# PR 번호가 있으면 'PR', 없으면 'STAGING_PROMOTE'로 자동 설정
 if [ "${PR_NUMBER:-0}" != "0" ] && [ -n "$PR_NUMBER" ]; then
   ENV_VALUE="pr"
   GATE_VALUE="PR"
@@ -140,7 +148,7 @@ if [ -z "$UPLOAD_URL" ] || [ -z "$EVIDENCE_ID" ]; then
   exit 1
 fi
 
-echo "✅ Evidence ID: $EVIDENCE_ID"
+echo "Evidence ID: $EVIDENCE_ID"
 
 # ---------------------------------------------------------
 # 6. S3 Upload
@@ -158,16 +166,22 @@ fi
 echo "S3 업로드 완료"
 
 # ---------------------------------------------------------
-# 7. Complete 요청
+# 7. Complete 요청 (데이터 파싱)
 # ---------------------------------------------------------
 echo "[3/3] Complete 통보 중..."
 
 ISSUED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-# Trivy JSON 결과에서 요약 정보 추출 (취약점 개수 등)
+
+# Trivy JSON 결과에서 요약 정보 추출 (모든 등급 + Fixable)
+# jq 문법: ?는 필드가 없을 경우 에러 방지, length로 개수 셈
 CRITICAL_COUNT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity=="CRITICAL")] | length' "$REPORT_FILE" 2>/dev/null || echo 0)
 HIGH_COUNT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity=="HIGH")] | length' "$REPORT_FILE" 2>/dev/null || echo 0)
+MEDIUM_COUNT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity=="MEDIUM")] | length' "$REPORT_FILE" 2>/dev/null || echo 0)
+LOW_COUNT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity=="LOW")] | length' "$REPORT_FILE" 2>/dev/null || echo 0)
+# Fixable: FixedVersion 필드가 존재하고 비어있지 않은 경우
+FIXABLE_COUNT=$(jq '[.Results[].Vulnerabilities[]? | select(.FixedVersion != null and .FixedVersion != "")] | length' "$REPORT_FILE" 2>/dev/null || echo 0)
 
-echo "스캔 요약: Critical=$CRITICAL_COUNT, High=$HIGH_COUNT"
+echo "스캔 요약: Critical=$CRITICAL_COUNT, High=$HIGH_COUNT, Medium=$MEDIUM_COUNT, Low=$LOW_COUNT, Fixable=$FIXABLE_COUNT"
 
 COMPLETE_PAYLOAD=$(jq -n \
   --arg evidence_id "$EVIDENCE_ID" \
@@ -180,6 +194,9 @@ COMPLETE_PAYLOAD=$(jq -n \
   --arg issued_at "$ISSUED_AT" \
   --argjson critical "$CRITICAL_COUNT" \
   --argjson high "$HIGH_COUNT" \
+  --argjson medium "$MEDIUM_COUNT" \
+  --argjson low "$LOW_COUNT" \
+  --argjson fixable "$FIXABLE_COUNT" \
   --arg repo "${GITHUB_REPOSITORY}" \
   --arg workflow "${GITHUB_WORKFLOW:-unknown}" \
   --arg job "${GITHUB_JOB:-unknown}" \
@@ -201,8 +218,12 @@ COMPLETE_PAYLOAD=$(jq -n \
     parser_version: "v0",
     summary: {
       tool: "trivy",
+      tool_version: "unknown",
       critical: $critical,
-      high: $high
+      high: $high,
+      medium: $medium,
+      low: $low,
+      fixable: $fixable
     },
     producer: {
       repo: $repo,
@@ -218,4 +239,26 @@ COMPLETE_PAYLOAD=$(jq -n \
 
 COMPLETE_RES=$(sg_request "POST" "/v1/evidence/complete" "$COMPLETE_PAYLOAD")
 
-echo "전송 성공! (Evidence ID: $EVIDENCE_ID)"
+# Complete 응답 검증
+echo "Complete 응답:"
+echo "$COMPLETE_RES"
+
+STATUS=$(echo "$COMPLETE_RES" | jq -r '.status // empty')
+
+if [ -z "$STATUS" ]; then
+  echo "Error: Complete API가 status를 반환하지 않았습니다"
+  echo "Full Response: $COMPLETE_RES"
+  exit 1
+fi
+
+if [ "$STATUS" != "RECORDED" ]; then
+  echo "Warning: Evidence가 제대로 기록되지 않았을 수 있습니다"
+  echo "Expected status: RECORDED, Got: $STATUS"
+  exit 1
+fi
+
+echo ""
+echo "IMAGE_SCAN 전송 완료!"
+echo "   Evidence ID: $EVIDENCE_ID"
+echo "   Status: $STATUS"
+echo "   Summary: Crit=$CRITICAL_COUNT, High=$HIGH_COUNT, Med=$MEDIUM_COUNT, Low=$LOW_COUNT"
