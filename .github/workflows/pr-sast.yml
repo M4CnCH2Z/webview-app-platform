@@ -6,9 +6,6 @@ on:  # 워크플로우 트리거 조건
       - main  # main 브랜치로 들어오는 PR만 대상
       #- develop  # (주석) develop도 대상 가능
       # 테스트 단계라서 push test/sast pr할 때로 변경하기  # 테스트용 브랜치 운영 메모
-  push:
-    branches:
-      - test/sast_pr
   workflow_dispatch:  # 수동 실행(버튼으로 실행)
     inputs:
       pr_number:  # 수동 실행 시 스캔할 PR 번호 입력
