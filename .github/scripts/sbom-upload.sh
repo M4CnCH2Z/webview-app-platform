@@ -33,7 +33,16 @@ if [ -z "$TARGET_DIGEST" ]; then
   exit 1
 fi
 
-RELEASE_ID="$TARGET_DIGEST"
+# 접두사(sha256:) 확인 및 강제 부착 로직
+if [[ "$TARGET_DIGEST" == sha256:* ]]; then
+  # 이미 접두사가 있으면 그대로 사용
+  RELEASE_ID="$TARGET_DIGEST"
+else
+  # 접두사가 없으면 붙여줌
+  echo "⚠️  Digest에 'sha256:' 접두사가 없어 자동으로 추가합니다."
+  RELEASE_ID="sha256:$TARGET_DIGEST"
+fi
+
 echo "[SBOM] Release ID: $RELEASE_ID"
 
 # ---------------------------------------------------------
