@@ -111,20 +111,20 @@ jobs:
           SECURITY_GATE_URL: ${{ secrets.SECURITY_GATE_URL }}
           SECURITY_GATE_HMAC_SECRET: ${{ secrets.SECURITY_GATE_HMAC_SECRET }}
         run: |
-          chmod +x .github/scripts/scan_upload.sh
+          chmod +x .github/scripts/scan-upload.sh
           
           # IMAGE_SCAN 업로드 (PR이 아니므로 pr_number=0)
-          .github/scripts/scan_upload.sh trivy-image-scan.json 0 "${{ env.IMAGE_DIGEST }}"
+          .github/scripts/scan-upload.sh trivy-image-scan.json 0 "${{ env.IMAGE_DIGEST }}"
 
       - name: Upload SBOM to Security Gate
         env:
           SECURITY_GATE_URL: ${{ secrets.SECURITY_GATE_URL }}
           SECURITY_GATE_HMAC_SECRET: ${{ secrets.SECURITY_GATE_HMAC_SECRET }}
         run: |
-          chmod +x .github/scripts/sbom_upload.sh
+          chmod +x .github/scripts/sbom-upload.sh
           
           # SBOM 업로드
-          .github/scripts/sbom_upload.sh sbom.json 0 "${{ env.IMAGE_DIGEST }}"
+          .github/scripts/sbom-upload.sh sbom.json 0 "${{ env.IMAGE_DIGEST }}"
 
       - name: Evaluate Security Gate
         id: evaluate-gate
