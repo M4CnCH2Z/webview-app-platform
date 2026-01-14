@@ -14,7 +14,7 @@ import jakarta.validation.constraints.Positive;
 @AllArgsConstructor
 @Builder
 public class CartCreateRequest {
-
+    // 상품 번호
     @NotNull(message = "상품 번호를 입력해주세요.")
     private Long goodsId; // 상품 번호
 
