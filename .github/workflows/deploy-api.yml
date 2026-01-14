@@ -60,7 +60,7 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         working-directory: ./api
         run: |
-          echo "🏗️ 골든 이미지를 사용하여 Docker 빌드를 시작합니다..."
+          echo "골든 이미지를 사용하여 Docker 빌드를 시작합니다..."
           
           docker build \
             --build-arg ECR_REGISTRY=$ECR_REGISTRY \
@@ -74,8 +74,8 @@ jobs:
           FULL_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG)
           DIGEST_ONLY=$(echo $FULL_DIGEST | cut -d'@' -f2)
           
-          echo "📦 Full Image: $FULL_DIGEST"
-          echo "🔑 Digest: $DIGEST_ONLY"
+          echo "Full Image: $FULL_DIGEST"
+          echo "Digest: $DIGEST_ONLY"
           
           # Output 설정
           echo "digest=$DIGEST_ONLY" >> $GITHUB_OUTPUT
@@ -175,16 +175,16 @@ jobs:
           REASONS=$(echo "$EVAL_RESPONSE" | jq -c '.reasons // []')
           REQUIRED_EVIDENCE=$(echo "$EVAL_RESPONSE" | jq -c '.required_evidence // []')
           
-          echo "📊 Decision: $DECISION"
-          echo "🆔 Decision ID: $DECISION_ID"
-          echo "📋 Policy Version: $POLICY_VERSION"
+          echo "Decision: $DECISION"
+          echo "Decision ID: $DECISION_ID"
+          echo "Policy Version: $POLICY_VERSION"
           
           # PASS/FAIL 판정
           if [ "$DECISION" == "PASS" ]; then
             GATE_PASSED="true"
           else
             GATE_PASSED="false"
-            echo "❌ Gate 실패 사유:"
+            echo "Gate 실패 사유:"
             echo "$EVAL_RESPONSE" | jq '.reasons[]'
           fi
           
@@ -210,7 +210,7 @@ jobs:
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
-          echo "❌ Security Gate FAILED - Slack 알림 전송"
+          echo "Security Gate FAILED - Slack 알림 전송"
           
           # reasons 배열을 읽기 좋게 포맷팅
           REASONS_TEXT=$(echo '${{ env.GATE_REASONS }}' | jq -r '.[] | "• \(.code): \(.message)"' 2>/dev/null || echo "• 상세 사유 없음")
@@ -219,13 +219,13 @@ jobs:
             curl -X POST "$SLACK_WEBHOOK_URL" \
               -H "Content-Type: application/json" \
               -d "{
-                \"text\": \"🚨 Security Gate FAILED\",
+                \"text\": \"Security Gate FAILED\",
                 \"blocks\": [
                   {
                     \"type\": \"header\",
                     \"text\": {
                       \"type\": \"plain_text\",
-                      \"text\": \"🚨 Security Gate 검증 실패\"
+                      \"text\": \"Security Gate 검증 실패\"
                     }
                   },
                   {
@@ -264,7 +264,7 @@ jobs:
                 ]
               }"
           else
-            echo "⚠️ SLACK_WEBHOOK_URL이 설정되지 않았습니다"
+            echo "SLACK_WEBHOOK_URL이 설정되지 않았습니다"
           fi
 
       - name: Gate Failure Summary
@@ -272,7 +272,7 @@ jobs:
         run: |
           echo "::error::Security Gate FAILED - Staging Promote PR이 생성되지 않습니다."
           echo ""
-          echo "## ❌ Security Gate 검증 실패" >> $GITHUB_STEP_SUMMARY
+          echo "## Security Gate 검증 실패" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| 항목 | 값 |" >> $GITHUB_STEP_SUMMARY
           echo "|------|-----|" >> $GITHUB_STEP_SUMMARY
@@ -297,7 +297,7 @@ jobs:
       - name: Update Staging Manifest
         if: env.GATE_PASSED == 'true'
         run: |
-          echo "✅ Security Gate PASSED - Manifest 업데이트"
+          echo "Security Gate PASSED - Manifest 업데이트"
           
           # yq 설치
           wget -q https://github.com/mikefarah/yq/releases/download/v4.40.5/yq_linux_amd64 -O /tmp/yq
@@ -307,7 +307,7 @@ jobs:
           /tmp/yq e -i ".image.digest = \"${{ env.IMAGE_DIGEST }}\"" ${{ env.MANIFEST_FILE }}
           /tmp/yq e -i ".image.tag = \"${{ github.sha }}\"" ${{ env.MANIFEST_FILE }}
           
-          echo "📝 Updated ${{ env.MANIFEST_FILE }}:"
+          echo "Updated ${{ env.MANIFEST_FILE }}:"
           cat ${{ env.MANIFEST_FILE }}
 
       - name: Create Staging Promote PR
@@ -322,18 +322,18 @@ jobs:
             
             Security Gate 검증을 통과한 이미지입니다.
             
-            ### 📦 이미지 정보
+            ### 이미지 정보
             | 항목 | 값 |
             |------|-----|
             | Repository | `${{ env.ECR_REPOSITORY }}` |
             | Tag | `${{ github.sha }}` |
             | Digest | `${{ env.IMAGE_DIGEST }}` |
             
-            ### ✅ Security Gate
+            ### Security Gate
             - **Decision:** ${{ env.GATE_DECISION }}
             - **Decision ID:** `${{ env.GATE_DECISION_ID }}`
             
-            ### 🔗 Links
+            ### Links
             - [Workflow Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
             - [Commit](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})
             
@@ -350,7 +350,7 @@ jobs:
       - name: Success Summary
         if: env.GATE_PASSED == 'true'
         run: |
-          echo "## ✅ Build & Security Gate 성공" >> $GITHUB_STEP_SUMMARY
+          echo "## Build & Security Gate 성공" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| 항목 | 값 |" >> $GITHUB_STEP_SUMMARY
           echo "|------|-----|" >> $GITHUB_STEP_SUMMARY
