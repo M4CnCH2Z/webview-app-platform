@@ -1,46 +1,43 @@
 #!/bin/bash
 
 # =============================================================================
-# Security Gate Upload Script (Trivy 호환 & Docker Image Digest 필수 버전)
+# Security Gate Upload Script (Trivy Image Scan)
 # =============================================================================
+
+set -e
 
 REPORT_FILE=$1
 PR_NUMBER=$2
-TARGET_DIGEST=$3  # 3번째 인자: Docker Image Digest (필수)
+TARGET_DIGEST=$3  # Docker Image Digest (필수)
 
-# 환경변수 매핑
+# 환경변수
 SG_API_URL="${SECURITY_GATE_URL}"
 SG_API_SECRET="${SECURITY_GATE_HMAC_SECRET}"
-COMMIT_SHA=${GITHUB_SHA}
+COMMIT_SHA="${GITHUB_SHA}"
 
 # ---------------------------------------------------------
-# 1. 필수 변수 및 파일 체크
+# 1. 필수 변수 체크
 # ---------------------------------------------------------
-
-# 1) URL/Secret 체크
 if [ -z "$SG_API_URL" ] || [ -z "$SG_API_SECRET" ]; then
   echo "Error: SECURITY_GATE_URL 또는 SECRET이 설정되지 않았습니다."
   exit 1
 fi
 
-# 2) 파일 존재 확인
 if [ ! -f "$REPORT_FILE" ]; then
   echo "Error: 업로드할 파일이 없습니다: $REPORT_FILE"
   exit 1
 fi
 
-# 3) [중요] Docker Image Digest 체크 (Strict Mode)
 if [ -z "$TARGET_DIGEST" ]; then
-  echo "Error: Docker Image Digest($3)가 전달되지 않았습니다."
-  echo "   이 파이프라인은 반드시 도커 이미지와 매핑되어야 합니다."
+  echo "Error: Docker Image Digest가 전달되지 않았습니다."
   exit 1
-else
-  RELEASE_ID="$TARGET_DIGEST"
-  echo "[Target] Docker Image Digest: $RELEASE_ID"
 fi
 
+RELEASE_ID="$TARGET_DIGEST"
+echo "[Image Scan] Release ID: $RELEASE_ID"
+
 # ---------------------------------------------------------
-# 파일 크기 및 해시 계산 (OS 호환성 처리)
+# 2. 파일 정보 계산
 # ---------------------------------------------------------
 if [[ "$OSTYPE" == "darwin"* ]]; then
   FILE_SIZE=$(stat -f%z "$REPORT_FILE")
@@ -50,10 +47,10 @@ else
   FILE_SHA=$(sha256sum "$REPORT_FILE" | cut -d' ' -f1)
 fi
 
-echo "[준비] 파일: $REPORT_FILE (Size: $FILE_SIZE)"
+echo "📄 파일: $REPORT_FILE (Size: $FILE_SIZE)"
 
 # ---------------------------------------------------------
-# HMAC 서명 함수
+# 3. HMAC 서명 함수
 # ---------------------------------------------------------
 generate_signature() {
   local method=$1
@@ -78,83 +75,146 @@ sg_request() {
 }
 
 # ---------------------------------------------------------
-# 2. Presign 요청 (업로드할 S3 주소 받기)
+# 4. [핵심] Environment / Gate 자동 결정 로직
+# ---------------------------------------------------------
+# PR 번호가 있으면 'PR', 없으면 'STAGING_PROMOTE'로 자동 설정
+if [ "${PR_NUMBER:-0}" != "0" ] && [ -n "$PR_NUMBER" ]; then
+  ENV_VALUE="pr"
+  GATE_VALUE="PR"
+else
+  ENV_VALUE="staging"
+  GATE_VALUE="STAGING_PROMOTE"
+fi
+
+echo "Environment: $ENV_VALUE, Gate: $GATE_VALUE"
+
+# ---------------------------------------------------------
+# 5. Presign 요청
 # ---------------------------------------------------------
 echo "[1/3] Presign 요청 중..."
 
-# release_id에는 도커 이미지의 Digest($RELEASE_ID)가 들어감 
-PRESIGN_PAYLOAD=$(cat <<EOF
-{
-  "release_id": "$RELEASE_ID",
-  "env": "pr",
-  "gate": "PR",
-  "evidence_type": "IMAGE_SCAN",
-  "artifact_name": "scan.json",
-  "content_type": "application/json",
-  "content_length": $FILE_SIZE,
-  "sha256": "$FILE_SHA",
-  "producer": {
-    "repo": "${GITHUB_REPOSITORY:-unknown}",
-    "workflow": "${GITHUB_WORKFLOW:-unknown}",
-    "job": "${GITHUB_JOB:-unknown}",
-    "run_id": "${GITHUB_RUN_ID:-0}",
-    "attempt": ${GITHUB_RUN_ATTEMPT:-1},
-    "actor": "${GITHUB_ACTOR:-unknown}"
-  },
-  "commit_sha": "$COMMIT_SHA",
-  "pr_number": ${PR_NUMBER:-0}
-}
-EOF
-)
+PRESIGN_PAYLOAD=$(jq -n \
+  --arg release_id "$RELEASE_ID" \
+  --arg env "$ENV_VALUE" \
+  --arg gate "$GATE_VALUE" \
+  --arg artifact_name "scan.json" \
+  --argjson content_length "$FILE_SIZE" \
+  --arg sha256 "$FILE_SHA" \
+  --arg repo "${GITHUB_REPOSITORY}" \
+  --arg workflow "${GITHUB_WORKFLOW:-unknown}" \
+  --arg job "${GITHUB_JOB:-unknown}" \
+  --arg run_id "${GITHUB_RUN_ID:-0}" \
+  --argjson attempt "${GITHUB_RUN_ATTEMPT:-1}" \
+  --arg actor "${GITHUB_ACTOR:-unknown}" \
+  --arg commit_sha "$COMMIT_SHA" \
+  --argjson pr_number "${PR_NUMBER:-0}" \
+  '{
+    release_id: $release_id,
+    env: $env,
+    gate: $gate,
+    evidence_type: "IMAGE_SCAN",
+    artifact_name: $artifact_name,
+    content_type: "application/json",
+    content_length: $content_length,
+    sha256: $sha256,
+    producer: {
+      repo: $repo,
+      workflow: $workflow,
+      job: $job,
+      run_id: $run_id,
+      attempt: $attempt,
+      actor: $actor
+    },
+    commit_sha: $commit_sha,
+    pr_number: $pr_number
+  }')
 
 PRESIGN_RES=$(sg_request "POST" "/v1/evidence/presign" "$PRESIGN_PAYLOAD")
 UPLOAD_URL=$(echo "$PRESIGN_RES" | jq -r '.upload_url // empty')
 EVIDENCE_ID=$(echo "$PRESIGN_RES" | jq -r '.evidence_id // empty')
+S3_KEY=$(echo "$PRESIGN_RES" | jq -r '.s3_key // empty')
 
 if [ -z "$UPLOAD_URL" ] || [ -z "$EVIDENCE_ID" ]; then
-  echo "Presign 실패. 응답 내용:"
+  echo "Presign 실패:"
   echo "$PRESIGN_RES"
   exit 1
 fi
 
+echo "✅ Evidence ID: $EVIDENCE_ID"
+
 # ---------------------------------------------------------
-# 3. S3 Upload (받은 URL로 파일 전송)
+# 6. S3 Upload
 # ---------------------------------------------------------
 echo "[2/3] S3로 파일 업로드 중..."
-HTTP_CODE=$(curl -s -w "%{http_code}" -o /dev/null -X PUT -H "Content-Type: application/json" -T "$REPORT_FILE" "$UPLOAD_URL")
+HTTP_CODE=$(curl -s -w "%{http_code}" -o /dev/null -X PUT \
+  -H "Content-Type: application/json" \
+  -T "$REPORT_FILE" "$UPLOAD_URL")
 
 if [ "$HTTP_CODE" != "200" ]; then
   echo "S3 업로드 실패 (HTTP $HTTP_CODE)"
   exit 1
 fi
 
-# ---------------------------------------------------------
-# 4. Complete (완료 통보)
-# ---------------------------------------------------------
-echo "[3/3] 완료 통보 중..."
+echo "S3 업로드 완료"
 
-SUMMARY='{"tool":"Trivy","note":"GitHub Actions Scan Uploaded"}'
+# ---------------------------------------------------------
+# 7. Complete 요청
+# ---------------------------------------------------------
+echo "[3/3] Complete 통보 중..."
+
 ISSUED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+# Trivy JSON 결과에서 요약 정보 추출 (취약점 개수 등)
+CRITICAL_COUNT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity=="CRITICAL")] | length' "$REPORT_FILE" 2>/dev/null || echo 0)
+HIGH_COUNT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity=="HIGH")] | length' "$REPORT_FILE" 2>/dev/null || echo 0)
 
-COMPLETE_PAYLOAD=$(cat <<EOF
-{
-  "evidence_id": "$EVIDENCE_ID",
-  "release_id": "$RELEASE_ID",
-  "env": "pr",
-  "gate": "PR",
-  "evidence_type": "IMAGE_SCAN",
-  "sha256": "$FILE_SHA",
-  "size": $FILE_SIZE,
-  "issued_at": "$ISSUED_AT",
-  "summary": $SUMMARY,
-  "producer": {
-    "repo": "$GITHUB_REPOSITORY"
-  },
-  "commit_sha": "$COMMIT_SHA",
-  "pr_number": ${PR_NUMBER:-0}
-}
-EOF
-)
+echo "스캔 요약: Critical=$CRITICAL_COUNT, High=$HIGH_COUNT"
+
+COMPLETE_PAYLOAD=$(jq -n \
+  --arg evidence_id "$EVIDENCE_ID" \
+  --arg release_id "$RELEASE_ID" \
+  --arg env "$ENV_VALUE" \
+  --arg gate "$GATE_VALUE" \
+  --arg s3_key "$S3_KEY" \
+  --arg sha256 "$FILE_SHA" \
+  --argjson size "$FILE_SIZE" \
+  --arg issued_at "$ISSUED_AT" \
+  --argjson critical "$CRITICAL_COUNT" \
+  --argjson high "$HIGH_COUNT" \
+  --arg repo "${GITHUB_REPOSITORY}" \
+  --arg workflow "${GITHUB_WORKFLOW:-unknown}" \
+  --arg job "${GITHUB_JOB:-unknown}" \
+  --arg run_id "${GITHUB_RUN_ID:-0}" \
+  --argjson attempt "${GITHUB_RUN_ATTEMPT:-1}" \
+  --arg actor "${GITHUB_ACTOR:-unknown}" \
+  --arg commit_sha "$COMMIT_SHA" \
+  --argjson pr_number "${PR_NUMBER:-0}" \
+  '{
+    evidence_id: $evidence_id,
+    release_id: $release_id,
+    env: $env,
+    gate: $gate,
+    evidence_type: "IMAGE_SCAN",
+    s3_key: $s3_key,
+    sha256: $sha256,
+    size: $size,
+    issued_at: $issued_at,
+    parser_version: "v0",
+    summary: {
+      tool: "trivy",
+      critical: $critical,
+      high: $high
+    },
+    producer: {
+      repo: $repo,
+      workflow: $workflow,
+      job: $job,
+      run_id: $run_id,
+      attempt: $attempt,
+      actor: $actor
+    },
+    commit_sha: $commit_sha,
+    pr_number: $pr_number
+  }')
 
 COMPLETE_RES=$(sg_request "POST" "/v1/evidence/complete" "$COMPLETE_PAYLOAD")
 
