@@ -94,9 +94,12 @@ PRESIGN_PAYLOAD=$(cat <<EOF
   "content_length": $FILE_SIZE,
   "sha256": "$FILE_SHA",
   "producer": {
-    "repo": "$GITHUB_REPOSITORY",
-    "run_id": "$GITHUB_RUN_ID",
-    "actor": "$GITHUB_ACTOR"
+    "repo": "${GITHUB_REPOSITORY:-unknown}",
+    "workflow": "${GITHUB_WORKFLOW:-unknown}",
+    "job": "${GITHUB_JOB:-unknown}",
+    "run_id": "${GITHUB_RUN_ID:-0}",
+    "attempt": ${GITHUB_RUN_ATTEMPT:-1},
+    "actor": "${GITHUB_ACTOR:-unknown}"
   },
   "commit_sha": "$COMMIT_SHA",
   "pr_number": ${PR_NUMBER:-0}
