@@ -218,4 +218,26 @@ COMPLETE_PAYLOAD=$(jq -n \
 
 COMPLETE_RES=$(sg_request "POST" "/v1/evidence/complete" "$COMPLETE_PAYLOAD")
 
-echo "전송 성공! (Evidence ID: $EVIDENCE_ID)"
+# Complete 응답 검증
+echo "Complete 응답:"
+echo "$COMPLETE_RES"
+
+STATUS=$(echo "$COMPLETE_RES" | jq -r '.status // empty')
+
+if [ -z "$STATUS" ]; then
+  echo "⚠️ Error: Complete API가 status를 반환하지 않았습니다"
+  echo "Full Response: $COMPLETE_RES"
+  exit 1
+fi
+
+if [ "$STATUS" != "RECORDED" ]; then
+  echo "⚠️ Warning: Evidence가 제대로 기록되지 않았을 수 있습니다"
+  echo "Expected status: RECORDED, Got: $STATUS"
+  exit 1
+fi
+
+echo ""
+echo "✅ IMAGE_SCAN 전송 완료!"
+echo "   Evidence ID: $EVIDENCE_ID"
+echo "   Status: $STATUS"
+echo "   Critical: $CRITICAL_COUNT, High: $HIGH_COUNT"

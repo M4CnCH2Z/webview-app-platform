@@ -110,6 +110,7 @@ jobs:
         env:
           SECURITY_GATE_URL: ${{ secrets.SECURITY_GATE_URL }}
           SECURITY_GATE_HMAC_SECRET: ${{ secrets.SECURITY_GATE_HMAC_SECRET }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           chmod +x .github/scripts/scan-upload.sh
           
@@ -120,6 +121,7 @@ jobs:
         env:
           SECURITY_GATE_URL: ${{ secrets.SECURITY_GATE_URL }}
           SECURITY_GATE_HMAC_SECRET: ${{ secrets.SECURITY_GATE_HMAC_SECRET }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           chmod +x .github/scripts/sbom-upload.sh
           
