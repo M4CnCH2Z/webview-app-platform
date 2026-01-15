@@ -1,5 +1,5 @@
 image:
   repository: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/dark-mac-cheese-api
   pullPolicy: IfNotPresent
-  tag: "latest"
-  digest: "" 
+  tag: "158f40bc634ea86c53876bee3b95116de8af3418"
+  digest: "sha256:60bb71412b98224942464a743e44a55d9bdd4504a7d6432f3ec38fa067f6df4e"
