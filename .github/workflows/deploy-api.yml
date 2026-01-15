@@ -6,7 +6,7 @@ on:
     paths:
       - 'apps/api/**'
       - 'apps/api/**.md'
-      - '!deploy/values-staging.yaml'
+      - '!deploy/values-staging.yaml' # 배포 설정 파일 변경은 무시 (무한 루프 방지)
 
 env:
   AWS_REGION: ap-northeast-2
@@ -15,7 +15,7 @@ env:
   AWS_ROLE_ARN: arn:aws:iam::763479270202:role/GitHubActionsECRRole
 
 permissions:
-  contents: write
+  contents: write 
   pull-requests: write
   id-token: write
 
