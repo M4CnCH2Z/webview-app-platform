@@ -39,7 +39,7 @@ if [[ "$TARGET_DIGEST" == sha256:* ]]; then
   RELEASE_ID="$TARGET_DIGEST"
 else
   # 접두사가 없으면 붙여줌
-  echo "⚠️  Digest에 'sha256:' 접두사가 없어 자동으로 추가합니다."
+  echo "Digest에 'sha256:' 접두사가 없어 자동으로 추가합니다."
   RELEASE_ID="sha256:$TARGET_DIGEST"
 fi
 
