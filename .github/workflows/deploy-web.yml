@@ -327,7 +327,18 @@ jobs:
 
           echo "Updated ${{ env.MANIFEST_FILE }}:"
           cat ${{ env.MANIFEST_FILE }}
-
+      
+      - name: Cleanup Temporary Files & Revert Permissions
+        if: always() 
+        run: |
+          echo "Cleaning up Trivy cache and artifacts..."
+          sudo rm -rf .cache
+          sudo rm -rf .trivy
+          rm -f trivy-image-scan.json sbom.json
+          
+          echo "Reverting script permissions..."
+          git checkout .github/scripts/
+        
       - name: Create Staging Promote PR
         if: env.GATE_PASSED == 'true'
         uses: peter-evans/create-pull-request@v6
