@@ -1,21 +1,21 @@
-name: API Build & Deploy (Staging)
+name: Web Build & Deploy (Staging)
 
 on:
   push:
     branches: [ "main" ]
     paths:
-      - 'apps/api/**'
-      - 'apps/api/**.md'
-      - '!deploy/values-staging.yaml' # 배포 설정 파일 변경은 무시 (무한 루프 방지)
+      - 'apps/web/**'
+      - '!apps/web/**.md'
+      - '!deploy/values-web-staging.yaml'
 
 env:
   AWS_REGION: ap-northeast-2
-  ECR_REPOSITORY: dark-mac-cheese-api
-  MANIFEST_FILE: deploy/values-staging.yaml
+  ECR_REPOSITORY: dark-mac-cheese-web
+  MANIFEST_FILE: deploy/values-web-staging.yaml
   AWS_ROLE_ARN: arn:aws:iam::763479270202:role/GitHubActionsECRRole
 
 permissions:
-  contents: write 
+  contents: write
   pull-requests: write
   id-token: write
 
@@ -25,28 +25,28 @@ jobs:
     outputs:
       image_digest: ${{ steps.build-image.outputs.digest }}
       gate_passed: ${{ steps.evaluate-gate.outputs.passed }}
-    
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          java-version: '21'
-          distribution: 'temurin'
-          cache: 'gradle'
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: apps/web/package-lock.json
 
-      - name: Build with Gradle
-        working-directory: ./apps/api
+      - name: Build Web Application
+        working-directory: ./apps/web
         run: |
-          chmod +x gradlew
-          ./gradlew clean bootJar -x test
+          npm ci
+          npm run build
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ env.AWS_ROLE_ARN }} 
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
@@ -58,29 +58,29 @@ jobs:
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
-        working-directory: ./apps/api
+        working-directory: ./apps/web
         run: |
           echo "골든 이미지를 사용하여 Docker 빌드를 시작합니다..."
-          
+
           docker build \
             --build-arg ECR_REGISTRY=$ECR_REGISTRY \
             --build-arg GOLDEN_TAG=1.0.0 \
             -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          
+
           # Push 후 digest 추출
           PUSH_OUTPUT=$(docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG)
-          
+
           # Digest만 추출 (sha256:xxx 형태)
           FULL_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG)
           DIGEST_ONLY=$(echo $FULL_DIGEST | cut -d'@' -f2)
-          
+
           echo "Full Image: $FULL_DIGEST"
           echo "Digest: $DIGEST_ONLY"
-          
+
           # Output 설정
           echo "digest=$DIGEST_ONLY" >> $GITHUB_OUTPUT
           echo "full_image=$FULL_DIGEST" >> $GITHUB_OUTPUT
-          
+
           # 환경변수도 설정 (후속 step에서 사용)
           echo "IMAGE_DIGEST=$DIGEST_ONLY" >> $GITHUB_ENV
           echo "FULL_IMAGE=$FULL_DIGEST" >> $GITHUB_ENV
@@ -88,7 +88,7 @@ jobs:
       # ─────────────────────────────────────────────────────
       # Security Scanning & Gate
       # ─────────────────────────────────────────────────────
-      
+
       - name: Run Trivy Image Scanner
         uses: aquasecurity/trivy-action@master
         with:
@@ -105,7 +105,6 @@ jobs:
           format: 'cyclonedx'
           output: 'sbom.json'
 
-      # reporting_errors 해결을 위해 상세 정보 변수 추가
       - name: Upload Image Scan to Security Gate
         id: upload-scan
         env:
@@ -121,7 +120,6 @@ jobs:
           chmod +x .github/scripts/scan-upload.sh
           .github/scripts/scan-upload.sh trivy-image-scan.json 0 "${{ env.IMAGE_DIGEST }}"
 
-      # reporting_errors 해결을 위해 상세 정보 변수 추가 (SBOM도 동일)
       - name: Upload SBOM to Security Gate
         env:
           SECURITY_GATE_URL: ${{ secrets.SECURITY_GATE_URL }}
@@ -135,13 +133,12 @@ jobs:
         run: |
           chmod +x .github/scripts/sbom-upload.sh
           .github/scripts/sbom-upload.sh sbom.json 0 "${{ env.IMAGE_DIGEST }}"
-      
-      # 스캔 결과 및 SBOM을 GitHub Artifact로 저장 (항상 실행)
+
       - name: Save Scan Results as Artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: security-scan-results
+          name: web-security-scan-results
           path: |
             trivy-image-scan.json
             sbom.json
@@ -156,11 +153,11 @@ jobs:
           SECURITY_GATE_URL: ${{ secrets.SECURITY_GATE_URL }}
           SECURITY_GATE_HMAC_SECRET: ${{ secrets.SECURITY_GATE_HMAC_SECRET }}
         run: |
-          echo " Security Gate 평가 중..."
-          
+          echo "🔍 Security Gate 평가 중..."
+
           TIMESTAMP=$(date +%s)
           EVAL_PATH="/v1/decisions/evaluate"
-          
+
           EVAL_BODY=$(cat <<EOF
           {
             "release_id": "${{ env.IMAGE_DIGEST }}",
@@ -176,25 +173,25 @@ jobs:
           EOF
           )
           EVAL_BODY=$(echo "$EVAL_BODY" | jq -c '.')
-          
+
           SIGNATURE=$(echo -n "${TIMESTAMP}.POST.${EVAL_PATH}.${EVAL_BODY}" | \
             openssl dgst -sha256 -hmac "$SECURITY_GATE_HMAC_SECRET" | cut -d' ' -f2)
-          
+
           EVAL_RESPONSE=$(curl -s -X POST "${SECURITY_GATE_URL}${EVAL_PATH}" \
             -H "X-SG-Timestamp: $TIMESTAMP" \
             -H "X-SG-Signature: $SIGNATURE" \
             -H "Content-Type: application/json" \
             -d "$EVAL_BODY")
-          
+
           echo "Gate Response: $EVAL_RESPONSE"
-          
+
           DECISION=$(echo "$EVAL_RESPONSE" | jq -r '.decision // "UNKNOWN"')
           DECISION_ID=$(echo "$EVAL_RESPONSE" | jq -r '.decision_id // ""')
           POLICY_VERSION=$(echo "$EVAL_RESPONSE" | jq -r '.policy_version // ""')
           REASONS=$(echo "$EVAL_RESPONSE" | jq -c '.reasons // []')
-          
+
           echo "Decision: $DECISION"
-          
+
           if [ "$DECISION" == "PASS" ]; then
             GATE_PASSED="true"
           else
@@ -202,11 +199,11 @@ jobs:
             echo "Gate 실패 사유:"
             echo "$EVAL_RESPONSE" | jq '.reasons[]'
           fi
-          
+
           echo "decision=$DECISION" >> $GITHUB_OUTPUT
           echo "decision_id=$DECISION_ID" >> $GITHUB_OUTPUT
           echo "passed=$GATE_PASSED" >> $GITHUB_OUTPUT
-          
+
           echo "GATE_PASSED=$GATE_PASSED" >> $GITHUB_ENV
           echo "GATE_DECISION=$DECISION" >> $GITHUB_ENV
           echo "GATE_DECISION_ID=$DECISION_ID" >> $GITHUB_ENV
@@ -217,27 +214,27 @@ jobs:
       # ─────────────────────────────────────────────────────
       # Gate FAIL 시: Slack 알림
       # ─────────────────────────────────────────────────────
-      
+
       - name: Notify Slack on Gate Failure
         if: env.GATE_PASSED != 'true'
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.M4CNCH2Z_BOT_SLACK_WEBHOOK_URL }}
         run: |
           echo "Security Gate FAILED - Slack 알림 전송"
-          
+
           REASONS_TEXT=$(echo '${{ env.GATE_REASONS }}' | jq -r '.[] | "• \(.code): \(.message)"' 2>/dev/null || echo "• 상세 사유 없음")
-          
+
           if [ -n "$SLACK_WEBHOOK_URL" ]; then
             curl -X POST "$SLACK_WEBHOOK_URL" \
               -H "Content-Type: application/json" \
               -d "{
-                \"text\": \"Security Gate FAILED\",
+                \"text\": \"[WEB] Security Gate FAILED\",
                 \"blocks\": [
                   {
                     \"type\": \"header\",
                     \"text\": {
                       \"type\": \"plain_text\",
-                      \"text\": \"Security Gate 검증 실패\"
+                      \"text\": \"🌐 Web Security Gate 검증 실패\"
                     }
                   },
                   {
@@ -283,11 +280,10 @@ jobs:
         if: env.GATE_PASSED != 'true'
         run: |
           echo "::error::Security Gate FAILED - Staging Promote PR이 생성되지 않습니다."
-          
-          echo "## 🚨 Security Gate 검증 실패" >> $GITHUB_STEP_SUMMARY
+
+          echo "## 🚨 Security Gate 검증 실패 (Web)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          
-          # 기본 정보
+
           echo "### 📋 기본 정보" >> $GITHUB_STEP_SUMMARY
           echo "| 항목 | 값 |" >> $GITHUB_STEP_SUMMARY
           echo "|------|-----|" >> $GITHUB_STEP_SUMMARY
@@ -295,20 +291,19 @@ jobs:
           echo "| Decision | **${{ env.GATE_DECISION }}** |" >> $GITHUB_STEP_SUMMARY
           echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          
-          # 실제 취약점 목록 (Trivy 결과에서 추출)
+
           echo "### 🔴 Critical Vulnerabilities" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          
+
           if [ -f "trivy-image-scan.json" ]; then
             CRITICAL_COUNT=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' trivy-image-scan.json)
-            
+
             if [ "$CRITICAL_COUNT" -gt 0 ]; then
               echo "| Package | Current | Fixed | CVE |" >> $GITHUB_STEP_SUMMARY
               echo "|---------|---------|-------|-----|" >> $GITHUB_STEP_SUMMARY
               jq -r '.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL") | "| \(.PkgName) | \(.InstalledVersion) | \(.FixedVersion // "N/A") | \(.VulnerabilityID) |"' trivy-image-scan.json | head -20 >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
-              
+
               if [ "$CRITICAL_COUNT" -gt 20 ]; then
                 echo "> ⚠️ 외 $((CRITICAL_COUNT - 20))건 더 있음. Artifact에서 전체 JSON 확인" >> $GITHUB_STEP_SUMMARY
               fi
@@ -318,23 +313,22 @@ jobs:
           else
             echo "스캔 결과 파일 없음" >> $GITHUB_STEP_SUMMARY
           fi
-          
+
           echo "" >> $GITHUB_STEP_SUMMARY
-          
-          # Gate 실패 사유
+
           echo "### 📝 Gate 실패 사유" >> $GITHUB_STEP_SUMMARY
           echo '```json' >> $GITHUB_STEP_SUMMARY
           echo '${{ env.GATE_REASONS }}' | jq '.' >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "> 보안 취약점을 수정한 후 다시 시도해주세요." >> $GITHUB_STEP_SUMMARY
-          
+
           exit 1
 
       # ─────────────────────────────────────────────────────
       # Gate PASS 시: Staging Promote PR 생성
       # ─────────────────────────────────────────────────────
-      
+
       - name: Update Staging Manifest
         if: env.GATE_PASSED == 'true'
         run: |
@@ -343,55 +337,52 @@ jobs:
           chmod +x /tmp/yq
           /tmp/yq e -i ".image.digest = \"${{ env.IMAGE_DIGEST }}\"" ${{ env.MANIFEST_FILE }}
           /tmp/yq e -i ".image.tag = \"${{ github.sha }}\"" ${{ env.MANIFEST_FILE }}
-          
+
           echo "Updated ${{ env.MANIFEST_FILE }}:"
           cat ${{ env.MANIFEST_FILE }}
-      - name: Remove Trivy cache (임시 파일 삭제)
-        run: |
-          sudo rm -rf .cache
-          sudo rm -rf .trivy
 
       - name: Create Staging Promote PR
         if: env.GATE_PASSED == 'true'
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "chore(staging): promote API image ${{ github.sha }}"
-          title: "🚀 Deploy(Staging): Promote API Image"
+          commit-message: "chore(staging): promote Web image ${{ github.sha }}"
+          title: "🌐 Deploy(Staging): Promote Web Image"
           body: |
-            ## Staging 배포 요청
-            
-            Security Gate 검증을 통과한 이미지입니다.
-            
+            ## Staging 배포 요청 (Web)
+
+            Security Gate 검증을 통과한 Web 이미지입니다.
+
             ### 이미지 정보
             | 항목 | 값 |
             |------|-----|
             | Repository | `${{ env.ECR_REPOSITORY }}` |
             | Tag | `${{ github.sha }}` |
             | Digest | `${{ env.IMAGE_DIGEST }}` |
-            
+
             ### Security Gate
             - **Decision:** ${{ env.GATE_DECISION }}
             - **Decision ID:** `${{ env.GATE_DECISION_ID }}`
-            
+
             ### Links
             - [Workflow Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
             - [Commit](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})
-            
+
             ---
             > 이 PR을 머지하면 Staging 환경에 자동 배포됩니다.
-          branch: "deploy/staging-api-${{ github.sha }}"
+          branch: "deploy/staging-web-${{ github.sha }}"
           base: "main"
           delete-branch: true
           labels: |
             deployment
             staging
             auto-generated
+            web
 
       - name: Success Summary
         if: env.GATE_PASSED == 'true'
         run: |
-          echo "## Build & Security Gate 성공" >> $GITHUB_STEP_SUMMARY
+          echo "## ✅ Build & Security Gate 성공 (Web)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| 항목 | 값 |" >> $GITHUB_STEP_SUMMARY
           echo "|------|-----|" >> $GITHUB_STEP_SUMMARY
