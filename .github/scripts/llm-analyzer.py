@@ -173,7 +173,7 @@ def run_deduplication(input_dir):
         print(" 분석할 보안 이슈가 없습니다.")
         # 빈 결과 파일 생성 (워크플로우 에러 방지)
         with open(os.path.join(input_dir, "deduplicated-results.json"), "w") as f:
-            json.dump({"summary": {"new_critical":0, "new_high":0, "new_medium":0, "new_low":0}, "findings": []}, f)
+            json.dump({"summary": {"tool": "Claude-AI-Analyzer", "tool_version": "1.0.0", "new_critical":0, "new_high":0, "new_medium":0, "new_low":0}, "findings": []}, f)
         return
 
     # 2. 총 개수 제한
@@ -205,6 +205,7 @@ def run_deduplication(input_dir):
 {{
   "summary": {{
     "tool": "Claude-AI-Analyzer",
+    "tool_version": "1.0.0",
     "new_critical": 0,
     "new_high": 0,
     "new_medium": 0,
