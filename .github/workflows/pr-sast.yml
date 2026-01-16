@@ -1,22 +1,18 @@
-name: PR SAST Security Scan  # 워크플로우 이름(깃헙 Actions 화면에 표시)
+name: PR SAST Security Scan
 
-on:  # 워크플로우 트리거 조건
-  pull_request:  # PR 생성/업데이트 시 실행
+on:  
+  pull_request:
     branches:
-      - main  # main 브랜치로 들어오는 PR만 대상
-      #- develop  # (주석) develop도 대상 가능
-      # 테스트 단계라서 push test/sast pr할 때로 변경하기  # 테스트용 브랜치 운영 메모
-  workflow_dispatch:  # 수동 실행(버튼으로 실행)
+      - main
+  workflow_dispatch:
     inputs:
-      pr_number:  # 수동 실행 시 스캔할 PR 번호 입력
+      pr_number: # 수동 실행 시 스캔할 PR 번호 입력
         description: 'PR number to scan'  # 입력값 설명
         required: true  # 필수 입력
-        type: string  
-
-# PR당 하나의 SAST 워크플로우만 실행  # 같은 PR에서 중복 실행 방지(동시성 제어)
+        type: string
 concurrency:
   group: pr-sast-${{ github.event.pull_request.number || github.event.inputs.pr_number }}  # PR번호 기준으로 그룹 묶기(수동 실행도 지원)
-  cancel-in-progress: true  # 같은 그룹에서 새 실행이 뜨면 기존 실행 취소(최신만 유지)
+  cancel-in-progress: true
 
 permissions:  # 워크플로우가 GitHub API/리포지토리에 접근할 권한
   contents: read  # 레포 코드 읽기 권한(체크아웃/분석에 필요)
@@ -112,31 +108,34 @@ jobs:  # 실제 실행될 작업(Job)들
       - name: Install and Run Semgrep
         run: |
           pip install semgrep
-          semgrep scan --config p/security-audit --config p/owasp-top-ten --config p/javascript --config p/typescript --config p/react --severity ERROR --sarif --output semgrep.sarif . || true
+          # 1. --severity ERROR 옵션 삭제 (모든 등급 다 가져오기)
+          # 2. 결과는 그대로 semgrep.sarif 로 저장
+          semgrep scan --config p/security-audit --config p/owasp-top-ten --config p/javascript --config p/typescript --config p/react --config p/java --sarif --output semgrep.sarif . || true
         env:
           SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
 
-      - name: Filter Semgrep to Critical/High only
-        run: |
-          python3 << 'EOF'
-          import json
-          import os
-
-          if os.path.exists('semgrep.sarif') and os.path.isfile('semgrep.sarif'):
-              with open('semgrep.sarif') as f:
-                  data = json.load(f)
-
-              # SARIF의 runs[].results[]에서 level이 'error'인 것만 남김
-              for run in data.get('runs', []):
-                  if 'results' in run:
-                      run['results'] = [r for r in run['results'] if r.get('level') == 'error']
-
-              with open('semgrep.sarif', 'w') as f:
-                  json.dump(data, f)
-              print("Filtered semgrep.sarif")
-          else:
-              print("semgrep.sarif not found")
-          EOF
+      # llm-analyzer에서 필터링하려고 삭제 하기 
+      #- name: Filter Semgrep to Critical/High only
+      ##  run: |
+      ##    python3 << 'EOF'
+      ##    import json
+      ##    import os
+      #
+      #    if os.path.exists('semgrep.sarif') and os.path.isfile('semgrep.sarif'):
+      #        with open('semgrep.sarif') as f:
+      #            data = json.load(f)
+      #
+      #        # SARIF의 runs[].results[]에서 level이 'error'인 것만 남김
+      #        for run in data.get('runs', []):
+      #            if 'results' in run:
+      #                run['results'] = [r for r in run['results'] if r.get('level') == 'error']
+      #
+      #        with open('semgrep.sarif', 'w') as f:
+      #            json.dump(data, f)
+      #        print("Filtered semgrep.sarif")
+      #    else:
+      #        print("semgrep.sarif not found")
+      #    EOF
 
       - name: Upload Semgrep results
         uses: actions/upload-artifact@v4
@@ -215,29 +214,29 @@ jobs:  # 실제 실행될 작업(Job)들
           output: scan-results/codeql-${{ matrix.language }}.sarif
           upload: false
 
-      - name: Filter CodeQL to Error level only
-        run: |
-          python3 << 'EOF'
-          import json
-          import os
+      #- name: Filter CodeQL to Error level only
+      #  run: |
+      #    python3 << 'EOF'
+      #    import json
+      #    import os
 
-          filepath = 'scan-results/codeql-${{ matrix.language }}.sarif'
+      #    filepath = 'scan-results/codeql-${{ matrix.language }}.sarif'
 
-          if os.path.exists(filepath) and os.path.isfile(filepath):
-              with open(filepath) as f:
-                  data = json.load(f)
+      #    if os.path.exists(filepath) and os.path.isfile(filepath):
+      #        with open(filepath) as f:
+      #            data = json.load(f)
 
-              # SARIF의 runs[].results[]에서 level이 'error'인 것만 남김
-              for run in data.get('runs', []):
-                  if 'results' in run:
-                      run['results'] = [r for r in run['results'] if r.get('level') == 'error']
+      #        # SARIF의 runs[].results[]에서 level이 'error'인 것만 남김
+      #        for run in data.get('runs', []):
+      #            if 'results' in run:
+      #                run['results'] = [r for r in run['results'] if r.get('level') == 'error']
 
-              with open(filepath, 'w') as f:
-                  json.dump(data, f)
-              print(f"Filtered {filepath}")
-          else:
-              print(f"File not found or is directory: {filepath}")
-          EOF
+      #        with open(filepath, 'w') as f:
+      #            json.dump(data, f)
+      #        print(f"Filtered {filepath}")
+      #    else:
+      #        print(f"File not found or is directory: {filepath}")
+      #    EOF
 
       - name: Upload CodeQL results
         uses: actions/upload-artifact@v4
