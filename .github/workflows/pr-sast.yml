@@ -17,8 +17,8 @@ concurrency:
 permissions:  # 워크플로우가 GitHub API/리포지토리에 접근할 권한
   contents: read  # 레포 코드 읽기 권한(체크아웃/분석에 필요)
   pull-requests: write  # PR에 코멘트 작성 권한(결과 요약 댓글)
-#  security-events: write  # 보안 이벤트(예: SARIF 업로드)에 필요한 권한(현재는 upload:false지만 확장 대비)
-#  checks: write  # GitHub Check 생성 권한(SG verdict를 체크로 표시)
+  security-events: write  # 보안 이벤트(예: SARIF 업로드)에 필요한 권한(현재는 upload:false지만 확장 대비)
+  checks: write  # GitHub Check 생성 권한(SG verdict를 체크로 표시)
   actions: read
 jobs:  # 실제 실행될 작업(Job)들
   # ===================================================================
