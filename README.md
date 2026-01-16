@@ -1,3 +1,4 @@
+test
 # WebView App Platform Monorepo
 
 Monorepo for a WebView-hosted Android app, React web frontend and Spring Boot API (both based on `dbswhd4932/shoppingmall_project`), and shared bridge contracts.
