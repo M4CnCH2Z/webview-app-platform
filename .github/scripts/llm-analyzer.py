@@ -226,7 +226,7 @@ def run_deduplication(input_dir):
 
     # 4. 클로드 호출
     # 모델명은 사용 가능한 최신 모델로 지정하세요.
-    model = ChatAnthropic(model="claude-3-5-sonnet-20240620", temperature=0) 
+    model = ChatAnthropic(model="claude-sonnet-4-20250514", temperature=0) 
     chain = prompt | model | parser
 
     print(f" AI 분석 시작... ({len(all_findings)}개 항목)")
