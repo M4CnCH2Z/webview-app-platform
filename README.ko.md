@@ -23,7 +23,9 @@
 
 ## Docker Compose 로컬 실행
 - 요구 버전: OpenJDK 21, Node.js 22.19.0, Docker Desktop 29.1.3, Docker Compose v5.0.0
-- 루트에서 한번에 실행: `docker compose up -d --build`
+- 로컬 오버라이드 사용:
+  - `docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build`
+  - 로컬 전용 Dockerfile: `apps/api/Dockerfile.local`, `apps/web/Dockerfile.local`
 - 중지: `docker compose stop` / 삭제: `docker compose down`
 - 확인:
   - `docker compose ps`
@@ -31,7 +33,7 @@
   - 브라우저: `http://localhost:3000`
 
 ### 구성 요약
-- infra: mysql(3307->3306), redis(6379), rabbitmq(5672/15672), prometheus(9090), grafana(3001)
+- infra: mysql(3307->3306), redis(6379), rabbitmq(5672/15672), prometheus(9091), grafana(3001)
 - api: 8080
 - web: nginx 정적 서빙 + `/api` → `http://api:8080` 리버스 프록시
 

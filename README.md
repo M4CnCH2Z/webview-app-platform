@@ -40,7 +40,9 @@ Monorepo for a WebView-hosted Android app, React web frontend and Spring Boot AP
 
 ## Docker Compose (local)
 - Required versions: OpenJDK 21, Node.js 22.19.0, Docker Desktop 29.1.3, Docker Compose v5.0.0
-- Run from repo root: `docker compose up -d --build`
+- Use local override:
+  - `docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build`
+  - Local Dockerfiles: `apps/api/Dockerfile.local`, `apps/web/Dockerfile.local`
 - Stop: `docker compose stop` / Remove: `docker compose down`
 - Check:
   - `docker compose ps`
@@ -48,7 +50,7 @@ Monorepo for a WebView-hosted Android app, React web frontend and Spring Boot AP
   - Browser: `http://localhost:3000`
 
 ### Services
-- infra: mysql(3307->3306), redis(6379), rabbitmq(5672/15672), prometheus(9090), grafana(3001)
+- infra: mysql(3307->3306), redis(6379), rabbitmq(5672/15672), prometheus(9091), grafana(3001)
 - api: 8080
 - web: nginx static hosting + `/api` → `http://api:8080` reverse proxy
 
