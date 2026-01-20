@@ -1,3 +1,4 @@
+# NOTE: ArgoCD staging deploys from infra/k8s (kustomize). This file is not applied.
 image:
   repository: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/dark-mac-cheese-web
   pullPolicy: IfNotPresent

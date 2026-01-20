@@ -7,7 +7,9 @@ resources:
   - mysql.yaml
 
 images:
+  # API digest is managed by CI via GitOps (see .github/workflows/deploy-api.yml).
   - name: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-api
     newTag: 7be75111491eecdadc3f4343ffc98d73f07410b6
-  - name: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-web
+  # Web digest is managed by CI via GitOps (see .github/workflows/deploy-web.yml).
+  - name: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/dark-mac-cheese-web
     newTag: 7be75111491eecdadc3f4343ffc98d73f07410b6
