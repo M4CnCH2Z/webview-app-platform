@@ -39,6 +39,9 @@ logging:
           descriptor:
             sql: debug #JPA 파라미터 콘솔에서 확인가능
     root: info
+app:
+  rabbit:
+    enabled: false
 cloud:
   aws:
     credentials:

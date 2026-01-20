@@ -30,6 +30,8 @@ spec:
           value: "redis"    # 아까 배포한 redis 서비스 이름
         - name: SPRING_DATA_REDIS_PORT
           value: "6379"
+        - name: APP_RABBIT_ENABLED
+          value: "false"
         # -----------------------
         - name: LOG_DIR
           value: /app/logs

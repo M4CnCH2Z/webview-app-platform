@@ -26,7 +26,7 @@ import org.springframework.context.annotation.Configuration;
  * - RabbitTemplate: 메시지 발행을 위한 템플릿
  */
 @Configuration
-@ConditionalOnProperty(name = "rabbitmq.enabled", havingValue = "true", matchIfMissing = false)
+@ConditionalOnProperty(name = "app.rabbit.enabled", havingValue = "true", matchIfMissing = false)
 public class RabbitMQConfig {
 
     // Queue 이름 상수

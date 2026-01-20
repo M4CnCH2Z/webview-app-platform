@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
  */
 @Slf4j
 @Component
-@ConditionalOnProperty(name = "rabbitmq.enabled", havingValue = "true", matchIfMissing = false)
+@ConditionalOnProperty(name = "app.rabbit.enabled", havingValue = "true", matchIfMissing = false)
 @RequiredArgsConstructor
 public class OrderEventPublisher {
 

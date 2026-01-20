@@ -111,3 +111,7 @@ logging:
     org.hibernate.SQL: info
     # [보안] 디버그 로그에는 민감 정보가 찍힐 수 있으므로 주의
     com.project.shop: info 
+
+app:
+  rabbit:
+    enabled: false

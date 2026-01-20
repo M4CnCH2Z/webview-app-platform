@@ -87,3 +87,7 @@ logging:
     root: info
     org.hibernate.SQL: info
     com.project.shop: info
+
+app:
+  rabbit:
+    enabled: false

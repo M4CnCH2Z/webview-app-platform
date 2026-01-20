@@ -209,6 +209,21 @@ RabbitMQ Consumer → 이메일 발송
 
 ## 환경 설정
 
+### 활성화/비활성화 플래그
+
+RabbitMQ 사용 여부는 아래 플래그로 제어합니다.
+
+- 설정 키: `app.rabbit.enabled`
+- 환경 변수: `APP_RABBIT_ENABLED`
+
+예시 (RabbitMQ 비활성화):
+
+```yaml
+app:
+  rabbit:
+    enabled: false
+```
+
 ### 1. Docker Compose 설정
 
 **파일 위치**: `docker-compose.yml`
