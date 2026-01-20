@@ -6,13 +6,13 @@ on:
     paths:
       - 'apps/api/**'
       - 'apps/api/**.md'
+      - '!deploy/values-staging.yaml' # 배포 설정 파일 변경은 무시 (무한 루프 방지)
   workflow_dispatch: {}
 
 env:
   AWS_REGION: ap-northeast-2
   ECR_REPOSITORY: dark-mac-cheese-api
-  KUSTOMIZATION_FILE: infra/k8s/kustomization.yaml
-  KUSTOMIZE_IMAGE_NAME: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/dark-mac-cheese-api
+  MANIFEST_FILE: deploy/values-staging.yaml
   AWS_ROLE_ARN: arn:aws:iam::763479270202:role/GitHubActionsECRRole
 
 permissions:
@@ -336,19 +336,17 @@ jobs:
       # Gate PASS 시: Staging Promote PR 생성
       # ─────────────────────────────────────────────────────
       
-      - name: Update Staging Kustomization
+      - name: Update Staging Manifest
         if: env.GATE_PASSED == 'true'
         run: |
-          echo "Security Gate PASSED - Kustomization 업데이트"
+          echo "Security Gate PASSED - Manifest 업데이트"
           wget -q https://github.com/mikefarah/yq/releases/download/v4.40.5/yq_linux_amd64 -O /tmp/yq
           chmod +x /tmp/yq
-          /tmp/yq e -i '(.images[] | select(.name == strenv(KUSTOMIZE_IMAGE_NAME)) | .digest) = strenv(IMAGE_DIGEST)' ${{ env.KUSTOMIZATION_FILE }}
-          /tmp/yq e -i '(.images[] | select(.name == strenv(KUSTOMIZE_IMAGE_NAME)) | del(.newTag))' ${{ env.KUSTOMIZATION_FILE }}
-          SHORT_DIGEST=$(echo "${{ env.IMAGE_DIGEST }}" | cut -c1-12)
-          echo "SHORT_DIGEST=$SHORT_DIGEST" >> $GITHUB_ENV
+          /tmp/yq e -i ".image.digest = \"${{ env.IMAGE_DIGEST }}\"" ${{ env.MANIFEST_FILE }}
+          /tmp/yq e -i ".image.tag = \"${{ github.sha }}\"" ${{ env.MANIFEST_FILE }}
           
-          echo "Updated ${{ env.KUSTOMIZATION_FILE }}:"
-          cat ${{ env.KUSTOMIZATION_FILE }}
+          echo "Updated ${{ env.MANIFEST_FILE }}:"
+          cat ${{ env.MANIFEST_FILE }}
       - name: Remove Trivy cache (임시 파일 삭제)
         run: |
           sudo rm -rf .cache
@@ -364,8 +362,8 @@ jobs:
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "chore(staging): bump api image digest to ${{ env.SHORT_DIGEST }}"
-          title: "🚀 Deploy(Staging): Bump API Image Digest"
+          commit-message: "chore(staging): promote API image ${{ github.sha }}"
+          title: "🚀 Deploy(Staging): Promote API Image"
           body: |
             ## Staging 배포 요청
             
@@ -375,6 +373,7 @@ jobs:
             | 항목 | 값 |
             |------|-----|
             | Repository | `${{ env.ECR_REPOSITORY }}` |
+            | Tag | `${{ github.sha }}` |
             | Digest | `${{ env.IMAGE_DIGEST }}` |
             
             ### Security Gate
@@ -403,6 +402,7 @@ jobs:
           echo "| 항목 | 값 |" >> $GITHUB_STEP_SUMMARY
           echo "|------|-----|" >> $GITHUB_STEP_SUMMARY
           echo "| Image | \`${{ env.ECR_REPOSITORY }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tag | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Digest | \`${{ env.IMAGE_DIGEST }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Decision | **${{ env.GATE_DECISION }}** |" >> $GITHUB_STEP_SUMMARY
           echo "| Decision ID | \`${{ env.GATE_DECISION_ID }}\` |" >> $GITHUB_STEP_SUMMARY

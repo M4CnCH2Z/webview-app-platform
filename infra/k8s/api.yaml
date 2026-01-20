@@ -3,6 +3,10 @@ kind: Deployment
 metadata:
   name: my-shopping-api
   namespace: staging
+  annotations:
+    argocd-image-updater.argoproj.io/image-list: api=763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-api
+    argocd-image-updater.argoproj.io/api.update-strategy: latest
+    argocd-image-updater.argoproj.io/write-back-method: git
 spec:
   replicas: 1
   selector:
@@ -15,8 +19,7 @@ spec:
     spec:
       containers:
       - name: my-api
-        image: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-api
-        imagePullPolicy: IfNotPresent
+        image: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-api:latest
         ports:
         - containerPort: 8080
         env:

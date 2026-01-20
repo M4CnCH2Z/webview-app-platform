@@ -129,27 +129,6 @@ GitHub 저장소 → **Settings** → **Environments** → **New environment**
 3. Deploy job이 "Waiting for approval" 상태인지 확인
 4. 승인 버튼 클릭 → 배포 진행 확인
 
-### 3.3 staging 배포(GitOps, digest)
-
-ArgoCD는 `infra/k8s` 경로(Kustomize)를 소스로 배포하며, 이미지는 digest로 고정됩니다.
-
-**소스 오브 트루스**
-- `infra/k8s/api.yaml`
-- `infra/k8s/web.yaml`
-- `infra/k8s/kustomization.yaml`
-
-**참고**
-- `deploy/values-staging.yaml`, `deploy/values-web-staging.yaml`은 Helm 예시로 유지되며 실제 배포에는 사용되지 않습니다.
-
-**배포 흐름**
-1. main에 API/Web 변경 merge
-2. `.github/workflows/deploy-api.yml` / `.github/workflows/deploy-web.yml` 실행
-3. 워크플로우가 `infra/k8s/kustomization.yaml`의 image digest 갱신 PR 생성
-4. PR 머지 → ArgoCD OutOfSync 확인 → Sync로 롤아웃
-
-**검증**
-- `kubectl -n staging describe deploy my-shopping-api` / `my-shopping-web`에서 `repo@sha256:<digest>` 형태 확인
-
 ---
 
 ## 4. SonarQube 설정
