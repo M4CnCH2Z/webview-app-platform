@@ -13,6 +13,22 @@
 - `.github/workflows/main-ci-cd.yml`: main push/dispatch용, web/android 배포 placeholder 포함
 - `.github/workflows/nightly.yml`: 매일 03:00 KST(18:00 UTC) + dispatch, 최소 lint/build
 - `.github/workflows/android-release.yml`: 태그 `android-v*` + dispatch, release placeholder(환경 보호 예시)
+- `.github/workflows/deploy-api.yml`: API 빌드/스캔 후 staging kustomization에 digest 반영 PR 생성
+- `.github/workflows/deploy-web.yml`: Web 빌드/스캔 후 staging kustomization에 digest 반영 PR 생성
+
+## staging 배포(GitOps, digest)
+- ArgoCD Application은 `infra/api-app.yaml`에서 `infra/k8s` 경로를 Kustomize로 배포
+- staging API/Web 소스 오브 트루스:
+  - `infra/k8s/api.yaml`
+  - `infra/k8s/web.yaml`
+  - `infra/k8s/kustomization.yaml`
+- `deploy/values-staging.yaml`, `deploy/values-web-staging.yaml`은 Helm용 예시로 남아 있으며 ArgoCD 배포에는 사용되지 않음
+- 배포 절차:
+  1) main에 API 변경 머지 → `.github/workflows/deploy-api.yml`이 이미지 빌드/스캔
+  2) 워크플로우가 `infra/k8s/kustomization.yaml`의 API 이미지 digest를 갱신하는 PR 생성
+  3) PR 머지 후 ArgoCD에서 OutOfSync 확인 → Sync로 롤아웃
+- 확인 방법:
+  - ArgoCD Sync 이후 `kubectl -n staging describe deploy my-shopping-api`에서 `repo@sha256:<digest>` 형태 확인
 
 ## 주요 설정
 - concurrency: PR `pr-${{ github.ref }}`, main `main-${{ github.ref }}`, nightly `nightly-group`, release `release-android-${{ github.ref }}`

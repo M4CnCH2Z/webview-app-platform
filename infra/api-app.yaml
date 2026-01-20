@@ -3,12 +3,6 @@ kind: Application
 metadata:
   name: shoppingmall-api-app
   namespace: cd-system  # ArgoCD가 설치된 네임스페이스
-  annotations:
-    # ECR 이미지 자동 감시 및 업데이트 설정
-    argocd-image-updater.argoproj.io/image-list: my-api=763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-api
-    argocd-image-updater.argoproj.io/my-api.update-strategy: newest-build
-    argocd-image-updater.argoproj.io/write-back-method: git
-    argocd-image-updater.argoproj.io/my-api.kustomize.image-name: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-api
 spec:
   project: default
   source:

@@ -3,10 +3,6 @@ kind: Deployment
 metadata:
   name: my-shopping-web
   namespace: staging
-  annotations:
-    argocd-image-updater.argoproj.io/image-list: web=763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-web
-    argocd-image-updater.argoproj.io/web.update-strategy: latest
-    argocd-image-updater.argoproj.io/write-back-method: git
 spec:
   replicas: 1
   selector:
@@ -19,7 +15,8 @@ spec:
     spec:
       containers:
       - name: my-web
-        image: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-web:latest
+        image: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/dark-mac-cheese-web
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
         env:
