@@ -24,7 +24,7 @@ public class OrderNotificationConsumer {
 
     // @Autowired(required = false)로 Slack 서비스를 선택적으로 주입
     // slack.webhook.enabled=false인 경우 Bean이 생성되지 않으므로 required=false 처리
-    @Autowired(required = true)
+    @Autowired(required = false)
     private SlackNotificationService slackNotificationService;
 
     /**
