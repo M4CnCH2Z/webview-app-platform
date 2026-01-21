@@ -40,7 +40,7 @@ function App() {
                       content="default-src 'self'; 
                                 script-src 'self' 'unsafe-inline'; 
                                style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; 
-                               img-src 'self' data: blob: http://192.168.10.55:8080 http://localhost:8080; 
+                               img-src 'self' data: blob: http://192.168.10.55:8080 http://localhost:8080 https://shoppingmall-api-bucket.s3.ap-northeast-2.amazonaws.com; 
                                connect-src 'self' http://192.168.10.55:8080 http://localhost:8080; 
                                font-src 'self' https://cdnjs.cloudflare.com;" 
                      />
