@@ -14,6 +14,8 @@ configMapGenerator:
       - LOGGING_FILE_PATH=/app/logs
       - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/shoppingmall
       - SPRING_DATASOURCE_USERNAME=root
+generatorOptions:
+  disableNameSuffixHash: true
 images:
   - name: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-api
     newTag: 6fa46ed2821b3fbc2cfdcca52b341c0d7fe19d44
