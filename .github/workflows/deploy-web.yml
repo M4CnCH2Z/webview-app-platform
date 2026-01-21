@@ -21,12 +21,12 @@ permissions:
   id-token: write
 
 jobs:
-  build-and-push:
+  build-image:
     runs-on: ubuntu-latest
+    environment: staging
     outputs:
       image_digest: ${{ steps.build-image.outputs.digest }}
-      gate_passed: ${{ steps.evaluate-gate.outputs.passed }}
-
+      full_image: ${{ steps.build-image.outputs.full_image }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -55,27 +55,38 @@ jobs:
             --build-arg GOLDEN_TAG=1.0.0 \
             -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
 
-          # Push 후 digest 추출
           PUSH_OUTPUT=$(docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG)
 
-          # Digest만 추출 (sha256:xxx 형태)
           FULL_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG)
           DIGEST_ONLY=$(echo $FULL_DIGEST | cut -d'@' -f2)
 
           echo "Full Image: $FULL_DIGEST"
           echo "Digest: $DIGEST_ONLY"
 
-          # Output 설정
           echo "digest=$DIGEST_ONLY" >> $GITHUB_OUTPUT
           echo "full_image=$FULL_DIGEST" >> $GITHUB_OUTPUT
-
-          # 환경변수도 설정 (후속 step에서 사용)
           echo "IMAGE_DIGEST=$DIGEST_ONLY" >> $GITHUB_ENV
           echo "FULL_IMAGE=$FULL_DIGEST" >> $GITHUB_ENV
 
-      # ─────────────────────────────────────────────────────
-      # Security Scanning & Gate
-      # ─────────────────────────────────────────────────────
+  scan-and-gate:
+    runs-on: ubuntu-latest
+    environment: staging
+    needs: build-image
+    outputs:
+      gate_passed: ${{ steps.evaluate-gate.outputs.passed }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Run Trivy Image Scanner
         uses: aquasecurity/trivy-action@master
@@ -104,9 +115,10 @@ jobs:
           GITHUB_JOB: ${{ github.job }}
           GITHUB_RUN_ID: ${{ github.run_id }}
           GITHUB_ACTOR: ${{ github.actor }}
+          IMAGE_DIGEST: ${{ needs.build-image.outputs.image_digest }}
         run: |
           chmod +x .github/scripts/scan-upload.sh
-          .github/scripts/scan-upload.sh trivy-image-scan.json 0 "${{ env.IMAGE_DIGEST }}"
+          .github/scripts/scan-upload.sh trivy-image-scan.json 0 "${IMAGE_DIGEST}"
 
       - name: Upload SBOM to Security Gate
         env:
@@ -118,9 +130,10 @@ jobs:
           GITHUB_JOB: ${{ github.job }}
           GITHUB_RUN_ID: ${{ github.run_id }}
           GITHUB_ACTOR: ${{ github.actor }}
+          IMAGE_DIGEST: ${{ needs.build-image.outputs.image_digest }}
         run: |
           chmod +x .github/scripts/sbom-upload.sh
-          .github/scripts/sbom-upload.sh sbom.json 0 "${{ env.IMAGE_DIGEST }}"
+          .github/scripts/sbom-upload.sh sbom.json 0 "${IMAGE_DIGEST}"
 
       - name: Save Scan Results as Artifact
         if: always()
@@ -140,6 +153,7 @@ jobs:
         env:
           SECURITY_GATE_URL: ${{ secrets.SECURITY_GATE_URL }}
           SECURITY_GATE_HMAC_SECRET: ${{ secrets.SECURITY_GATE_HMAC_SECRET }}
+          IMAGE_DIGEST: ${{ needs.build-image.outputs.image_digest }}
         run: |
           echo "🔍 Security Gate 평가 중..."
 
@@ -148,7 +162,7 @@ jobs:
 
           EVAL_BODY=$(cat <<EOF
           {
-            "release_id": "${{ env.IMAGE_DIGEST }}",
+            "release_id": "${IMAGE_DIGEST}",
             "env": "staging",
             "gate": "STAGING_PROMOTE",
             "context": {
@@ -199,10 +213,6 @@ jobs:
           echo "$REASONS" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
 
-      # ─────────────────────────────────────────────────────
-      # Gate FAIL 시: Slack 알림
-      # ─────────────────────────────────────────────────────
-
       - name: Notify Slack on Gate Failure
         if: env.GATE_PASSED != 'true'
         env:
@@ -228,24 +238,24 @@ jobs:
                   {
                     \"type\": \"section\",
                     \"fields\": [
-                      {\"type\": \"mrkdwn\", \"text\": \"*Repository:*\n${{ github.repository }}\"},
-                      {\"type\": \"mrkdwn\", \"text\": \"*Decision:*\n${{ env.GATE_DECISION }}\"},
-                      {\"type\": \"mrkdwn\", \"text\": \"*Commit:*\n\`${{ github.sha }}\`\"},
-                      {\"type\": \"mrkdwn\", \"text\": \"*Actor:*\n${{ github.actor }}\"}
+                      {\"type\": \"mrkdwn\", \"text\": \"*Repository:*\\n${{ github.repository }}\"},
+                      {\"type\": \"mrkdwn\", \"text\": \"*Decision:*\\n${{ env.GATE_DECISION }}\"},
+                      {\"type\": \"mrkdwn\", \"text\": \"*Commit:*\\n\\`${{ github.sha }}\\`\"},
+                      {\"type\": \"mrkdwn\", \"text\": \"*Actor:*\\n${{ github.actor }}\"}
                     ]
                   },
                   {
                     \"type\": \"section\",
                     \"text\": {
                       \"type\": \"mrkdwn\",
-                      \"text\": \"*Image Digest:*\n\`${{ env.IMAGE_DIGEST }}\`\"
+                      \"text\": \"*Image Digest:*\\n\\`${{ needs.build-image.outputs.image_digest }}\\`\"
                     }
                   },
                   {
                     \"type\": \"section\",
                     \"text\": {
                       \"type\": \"mrkdwn\",
-                      \"text\": \"*실패 사유:*\n${REASONS_TEXT}\"
+                      \"text\": \"*실패 사유:*\\n${REASONS_TEXT}\"
                     }
                   },
                   {
@@ -275,7 +285,7 @@ jobs:
           echo "### 📋 기본 정보" >> $GITHUB_STEP_SUMMARY
           echo "| 항목 | 값 |" >> $GITHUB_STEP_SUMMARY
           echo "|------|-----|" >> $GITHUB_STEP_SUMMARY
-          echo "| Image Digest | \`${{ env.IMAGE_DIGEST }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Image Digest | \`${{ needs.build-image.outputs.image_digest }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Decision | **${{ env.GATE_DECISION }}** |" >> $GITHUB_STEP_SUMMARY
           echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -313,55 +323,56 @@ jobs:
 
           exit 1
 
-      # ─────────────────────────────────────────────────────
-      # Gate PASS 시: Staging Promote PR 생성
-      # ─────────────────────────────────────────────────────
+  update-manifest:
+    runs-on: ubuntu-latest
+    environment: staging
+    needs: [build-image, scan-and-gate]
+    if: needs.scan-and-gate.outputs.gate_passed == 'true'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
       - name: Update Staging Manifest
-        if: env.GATE_PASSED == 'true'
         run: |
           echo "Security Gate PASSED - Manifest 업데이트"
           wget -q https://github.com/mikefarah/yq/releases/download/v4.40.5/yq_linux_amd64 -O /tmp/yq
           chmod +x /tmp/yq
           /tmp/yq e -i "(.images[] | select(.name == \"763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-web\")).newTag = \"${{ github.sha }}\"" ${{ env.MANIFEST_FILE }}
-          /tmp/yq e -i "(.images[] | select(.name == \"763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-web\")).digest = \"${{ env.IMAGE_DIGEST }}\"" ${{ env.MANIFEST_FILE }}
+          /tmp/yq e -i "(.images[] | select(.name == \"763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-web\")).digest = \"${{ needs.build-image.outputs.image_digest }}\"" ${{ env.MANIFEST_FILE }}
 
           echo "Updated ${{ env.MANIFEST_FILE }}:"
           cat ${{ env.MANIFEST_FILE }}
-      
-      - name: Cleanup Temporary Files & Revert Permissions
-        if: always() 
+
+      - name: Remove Trivy cache (임시 파일 삭제)
         run: |
-          echo "Cleaning up Trivy cache and artifacts..."
           sudo rm -rf .cache
           sudo rm -rf .trivy
+
+      - name: Cleanup Artifacts
+        run: |
           rm -f trivy-image-scan.json sbom.json
-          
-          echo "Reverting script permissions..."
           git checkout .github/scripts/
-        
+
       - name: Create Staging Promote PR
-        if: env.GATE_PASSED == 'true'
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "chore(staging): promote Web image ${{ github.sha }}"
-          title: "🌐 Deploy(Staging): Promote Web Image"
+          commit-message: "chore(staging): promote WEB image ${{ github.sha }}"
+          title: "🚀 Deploy(Staging): Promote WEB Image"
           body: |
-            ## Staging 배포 요청 (Web)
+            ## Staging 배포 요청
 
-            Security Gate 검증을 통과한 Web 이미지입니다.
+            Security Gate 검증을 통과한 이미지입니다.
 
             ### 이미지 정보
             | 항목 | 값 |
             |------|-----|
             | Repository | `${{ env.ECR_REPOSITORY }}` |
             | Tag | `${{ github.sha }}` |
-            | Digest | `${{ env.IMAGE_DIGEST }}` |
+            | Digest | `${{ needs.build-image.outputs.image_digest }}` |
 
             ### Security Gate
-            - **Decision:** ${{ env.GATE_DECISION }}
-            - **Decision ID:** `${{ env.GATE_DECISION_ID }}`
+            - **Decision:** PASS
 
             ### Links
             - [Workflow Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
@@ -376,19 +387,16 @@ jobs:
             deployment
             staging
             auto-generated
-            web
 
       - name: Success Summary
-        if: env.GATE_PASSED == 'true'
         run: |
-          echo "## ✅ Build & Security Gate 성공 (Web)" >> $GITHUB_STEP_SUMMARY
+          echo "## Build & Security Gate 성공 (Web)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| 항목 | 값 |" >> $GITHUB_STEP_SUMMARY
           echo "|------|-----|" >> $GITHUB_STEP_SUMMARY
           echo "| Image | \`${{ env.ECR_REPOSITORY }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Tag | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Digest | \`${{ env.IMAGE_DIGEST }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Decision | **${{ env.GATE_DECISION }}** |" >> $GITHUB_STEP_SUMMARY
-          echo "| Decision ID | \`${{ env.GATE_DECISION_ID }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Digest | \`${{ needs.build-image.outputs.image_digest }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Decision | **PASS** |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Staging Promote PR이 생성되었습니다." >> $GITHUB_STEP_SUMMARY
