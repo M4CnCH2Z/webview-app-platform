@@ -18,8 +18,8 @@ generatorOptions:
   disableNameSuffixHash: true
 images:
   - name: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-api
-    newTag: 6fa46ed2821b3fbc2cfdcca52b341c0d7fe19d44
-    digest: "sha256:296d6f9134079003549f7a1709ec4275c5548636d364430b08a0e32a5609e8f5"
+    newTag: 58f630effff866474d64c835ed2fdd91bbfd6c13
+    digest: "sha256:e77c738485973813165465c1a5147ae6324e0eb23e558428eaeb2a8e6012c5cb"
   - name: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-web
     newTag: 6fa46ed2821b3fbc2cfdcca52b341c0d7fe19d44
     digest: "sha256:73e064f8f47e797821fb514be075fe1b2f650ee1e9f7958c25af93ca7757d771"
