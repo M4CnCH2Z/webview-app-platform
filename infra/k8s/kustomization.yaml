@@ -5,9 +5,9 @@ resources:
   - web.yaml
   - mysql.yaml
 images:
-  - name: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-api
+  - name: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/dark-mac-cheese-api
     newTag: 02596fb292769aef510981d6fff3d48e1503206b
     digest: "sha256:5b5c5fdfd89a4ba943b5fa840c74209fd5b918bf72cbe3709677cc5bc35fb4ce"
-  - name: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-web
+  - name: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/dark-mac-cheese-web
     newTag: 7be75111491eecdadc3f4343ffc98d73f07410b6
     digest: ""
