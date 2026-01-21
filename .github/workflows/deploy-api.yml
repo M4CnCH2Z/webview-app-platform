@@ -6,13 +6,13 @@ on:
     paths:
       - 'apps/api/**'
       - 'apps/api/**.md'
-      - '!infra/k8s/kustomization.yaml' # 배포 설정 파일 변경은 무시 (무한 루프 방지)
+      - '!infra/k8s/overlays/staging/kustomization.yaml' # 배포 설정 파일 변경은 무시 (무한 루프 방지)
   workflow_dispatch: {}
 
 env:
   AWS_REGION: ap-northeast-2
   ECR_REPOSITORY: dark-mac-cheese-api
-  MANIFEST_FILE: infra/k8s/kustomization.yaml
+  MANIFEST_FILE: infra/k8s/overlays/staging/kustomization.yaml
   AWS_ROLE_ARN: arn:aws:iam::763479270202:role/GitHubActionsECRRole
 
 permissions:
@@ -23,6 +23,7 @@ permissions:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    environment: staging
     outputs:
       image_digest: ${{ steps.build-image.outputs.digest }}
       gate_passed: ${{ steps.evaluate-gate.outputs.passed }}
@@ -214,6 +215,29 @@ jobs:
           echo "GATE_REASONS<<EOF" >> $GITHUB_ENV
           echo "$REASONS" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
+
+      - name: Set up kubectl
+        if: env.GATE_PASSED == 'true'
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'v1.29.0'
+
+      - name: Configure kubeconfig
+        if: env.GATE_PASSED == 'true'
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" > ~/.kube/config
+
+      - name: Apply staging secrets
+        if: env.GATE_PASSED == 'true'
+        run: |
+          kubectl -n staging create secret generic api-env-secret \
+            --from-literal=SPRING_DATASOURCE_PASSWORD="${{ secrets.SPRING_DATASOURCE_PASSWORD }}" \
+            --from-literal=JWT_SECRET="${{ secrets.JWT_SECRET }}" \
+            --from-literal=AWS_ACCESS_KEY="${{ secrets.AWS_ACCESS_KEY }}" \
+            --from-literal=AWS_SECRET_KEY="${{ secrets.AWS_SECRET_KEY }}" \
+            --from-literal=AWS_S3_BUCKET="${{ secrets.AWS_S3_BUCKET }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
 
       # ─────────────────────────────────────────────────────
       # Gate FAIL 시: Slack 알림

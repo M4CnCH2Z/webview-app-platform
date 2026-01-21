@@ -22,37 +22,11 @@ spec:
         image: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-api:latest
         ports:
         - containerPort: 8080
-        env:
-        # --- 추가 및 수정된 부분 ---
-        - name: SPRING_PROFILES_ACTIVE
-          value: "local"  # 임시로 local 프로필 사용
-        - name: SPRING_DATA_REDIS_HOST
-          value: "redis"    # 아까 배포한 redis 서비스 이름
-        - name: SPRING_DATA_REDIS_PORT
-          value: "6379"
-        - name: APP_RABBIT_ENABLED
-          value: "false"
-        - name: RABBITMQ_ENABLED
-          value: "false"
-        # -----------------------
-        - name: LOG_DIR
-          value: /app/logs
-        - name: LOGGING_FILE_PATH
-          value: /app/logs
-        - name: SPRING_DATASOURCE_URL
-          value: jdbc:mysql://mysql:3306/shoppingmall
-        - name: SPRING_DATASOURCE_USERNAME
-          value: root
-        - name: SPRING_DATASOURCE_PASSWORD
-          value: root1234
-        - name: JWT_SECRET
-          value: "staging_jwt_secret_key_32_chars_minimum_value_for_security"
-        - name: AWS_ACCESS_KEY
-          value: "dummy"
-        - name: AWS_SECRET_KEY
-          value: "dummy"
-        - name: AWS_S3_BUCKET
-          value: "dummy-bucket"
+        envFrom:
+        - configMapRef:
+            name: api-env
+        - secretRef:
+            name: api-env-secret
         volumeMounts:
         - name: log-dir
           mountPath: /app/logs
