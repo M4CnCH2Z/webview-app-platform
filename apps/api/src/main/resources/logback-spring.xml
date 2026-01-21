@@ -70,7 +70,7 @@
     </springProfile>
 
     <!-- [PROD/DEV] 프로필: 여기서만 Logstash 관련 정의 및 참조를 수행 -->
-    <springProfile name="prod, dev">
+    <springProfile name="prod, dev, staging">
         <!-- 앱더 정의를 프로필 안으로 이동하여 로컬 실행 시 로드 방지 -->
         <appender name="LOGSTASH" class="net.logstash.logback.appender.LogstashTcpSocketAppender">
             <destination>localhost:5044</destination>
