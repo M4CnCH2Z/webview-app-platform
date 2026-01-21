@@ -56,6 +56,8 @@ kind: Service
 metadata:
   name: web
   namespace: staging
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
 spec:
   type: LoadBalancer
   selector:
