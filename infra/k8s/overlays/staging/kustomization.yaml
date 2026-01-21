@@ -15,9 +15,9 @@ configMapGenerator:
       - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/shoppingmall
       - SPRING_DATASOURCE_USERNAME=root
 images:
-  - name: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/dark-mac-cheese-api
+  - name: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-api
     newTag: 40158c2e1e23f777d3680bf6cc440e3ff494ceb4
     digest: "sha256:769c1cf115ccb3f4144b0ce7259e5fb0cdda586b4238abf483066442932338be"
-  - name: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/dark-mac-cheese-web
+  - name: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-web
     newTag: cb37b62acecb87d4c954eaeff96303961aa516cb
     digest: "sha256:7e54d5081874bfd7aa9179b908a8ba1d3b4c0bb956d375d7c4365d29aaa85657"

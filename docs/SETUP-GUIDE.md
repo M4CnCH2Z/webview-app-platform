@@ -30,7 +30,7 @@ GitHub 저장소 → **Settings** → **Secrets and variables** → **Actions** 
 | `SG_API_TOKEN` | SG 인증 토큰 | `Bearer xyz123...` | 🔴 필수 |
 | `SONAR_TOKEN` | SonarQube 토큰 | `squ_abc123...` | 🟡 권장 |
 | `SONAR_HOST_URL` | SonarQube 서버 | `https://sonar.example.com` | 🟡 권장 |
-| `SONAR_PROJECT_KEY` | SonarQube 프로젝트 | `dark-mac-cheese` | 🟡 권장 |
+| `SONAR_PROJECT_KEY` | SonarQube 프로젝트 | `shoppingmall` | 🟡 권장 |
 | `SEMGREP_APP_TOKEN` | Semgrep 토큰 (선택) | `sgp_abc123...` | ⚪ 선택 |
 
 ### 1.2 API 키 발급 방법
@@ -138,7 +138,7 @@ GitHub 저장소 → **Settings** → **Environments** → **New environment**
 SonarQube 서버에서:
 
 1. **Projects** → **Create Project**
-2. Project Key: `dark-mac-cheese`
+2. Project Key: `shoppingmall`
 3. Display Name: `Dark Mac & Cheese`
 4. Main Branch: `main`
 
