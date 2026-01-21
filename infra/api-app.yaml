@@ -14,7 +14,7 @@ spec:
   source:
     repoURL: https://github.com/M4CnCH2Z/webview-app-platform.git
     targetRevision: HEAD
-    path: infra/k8s  # 실제 api.yaml, web.yaml 설계도가 있는 폴더
+    path: infra/k8s/overlays/staging
     kustomize: {}
   destination:
     server: https://kubernetes.default.svc
