@@ -222,11 +222,11 @@ jobs:
         with:
           version: 'v1.29.0'
 
-      - name: Configure kubeconfig
+      - name: Configure kubeconfig (EKS)
         if: env.GATE_PASSED == 'true'
         run: |
-          mkdir -p ~/.kube
-          echo "${{ secrets.KUBE_CONFIG }}" > ~/.kube/config
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name devsecops-cluster
+          kubectl config current-context
 
       - name: Apply staging secrets
         if: env.GATE_PASSED == 'true'
