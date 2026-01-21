@@ -9,5 +9,7 @@ resources:
 images:
   - name: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-api
     newTag: 7be75111491eecdadc3f4343ffc98d73f07410b6
+    digest: ""
   - name: 763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-web
     newTag: 7be75111491eecdadc3f4343ffc98d73f07410b6
+    digest: ""

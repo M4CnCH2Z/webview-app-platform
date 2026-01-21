@@ -6,13 +6,13 @@ on:
     paths:
       - 'apps/api/**'
       - 'apps/api/**.md'
-      - '!deploy/values-staging.yaml' # 배포 설정 파일 변경은 무시 (무한 루프 방지)
+      - '!infra/k8s/kustomization.yaml' # 배포 설정 파일 변경은 무시 (무한 루프 방지)
   workflow_dispatch: {}
 
 env:
   AWS_REGION: ap-northeast-2
   ECR_REPOSITORY: dark-mac-cheese-api
-  MANIFEST_FILE: deploy/values-staging.yaml
+  MANIFEST_FILE: infra/k8s/kustomization.yaml
   AWS_ROLE_ARN: arn:aws:iam::763479270202:role/GitHubActionsECRRole
 
 permissions:
@@ -342,8 +342,8 @@ jobs:
           echo "Security Gate PASSED - Manifest 업데이트"
           wget -q https://github.com/mikefarah/yq/releases/download/v4.40.5/yq_linux_amd64 -O /tmp/yq
           chmod +x /tmp/yq
-          /tmp/yq e -i ".image.digest = \"${{ env.IMAGE_DIGEST }}\"" ${{ env.MANIFEST_FILE }}
-          /tmp/yq e -i ".image.tag = \"${{ github.sha }}\"" ${{ env.MANIFEST_FILE }}
+          /tmp/yq e -i "(.images[] | select(.name == \"763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-api\")).newTag = \"${{ github.sha }}\"" ${{ env.MANIFEST_FILE }}
+          /tmp/yq e -i "(.images[] | select(.name == \"763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-api\")).digest = \"${{ env.IMAGE_DIGEST }}\"" ${{ env.MANIFEST_FILE }}
           
           echo "Updated ${{ env.MANIFEST_FILE }}:"
           cat ${{ env.MANIFEST_FILE }}
