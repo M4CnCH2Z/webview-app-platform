@@ -10,6 +10,21 @@ Modifications:
 - DevSecOps pipeline integration
 - Kubernetes deployment support
 
+## Environments (local vs staging)
+### local
+- Profile: `local`
+- Config: `application-local.yml` + local env vars
+- Image storage: local filesystem (`/uploads`)
+- S3: disabled (`S3Service` not active)
+- Logs: console + local files
+
+### staging
+- Profile: `staging`
+- Config: K8s ConfigMap + Secret
+- Image storage: S3 URL stored (S3 upload enabled)
+- S3: enabled
+- Logs: console + files + Logstash attempt
+
 2026.01.08 test12
 //test
 //test 0435

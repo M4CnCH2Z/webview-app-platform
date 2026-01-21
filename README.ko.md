@@ -41,6 +41,22 @@
 - 컨테이너 환경은 서비스명으로 통신합니다 (예: mysql, redis, rabbitmq1, api).
 - 웹은 기본적으로 `/api` 상대경로를 사용합니다.
 
+## 환경별 차이 (local vs staging)
+### local
+- 프로필: `local`
+- 설정 주입: `application-local.yml` + 로컬 환경변수
+- 이미지 저장: 로컬 파일(`/uploads`)
+- S3: 비활성 (`S3Service` 미사용)
+- 로그: 콘솔 + 로컬 파일
+
+### staging
+- 프로필: `staging`
+- 설정 주입: K8s ConfigMap + Secret
+- 이미지 저장: S3 URL 저장 (S3 업로드 활성)
+- S3: 활성
+- 로그: 콘솔 + 파일 + Logstash 전송 시도
+
+
 ## 골든 이미지 (ECR)
 - 위치: `infra/golden/`
 - 문서: `infra/golden/README.md`
