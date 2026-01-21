@@ -159,7 +159,11 @@ const CartList = () => {
                                     <tr key={item.cartId}>
                                         <td>
                                             <img
-                                                src={item.imageUrl ? `http://192.168.10.55:8080${item.imageUrl}` : 'https://via.placeholder.com/100'}
+                                                src={item.imageUrl
+                                                    ? (item.imageUrl.startsWith('http')
+                                                        ? item.imageUrl
+                                                        : `http://192.168.10.55:8080${item.imageUrl}`)
+                                                    : 'https://via.placeholder.com/100'}
                                                 alt={item.goodsName}
                                                 style={{ width: '80px', height: '80px', objectFit: 'cover' }}
                                                 className="rounded"
@@ -229,7 +233,11 @@ const CartList = () => {
                                     <Row>
                                         <Col xs={4}>
                                             <img
-                                                src={item.imageUrl ? `http://192.168.10.55:8080${item.imageUrl}` : 'https://via.placeholder.com/100'}
+                                                src={item.imageUrl
+                                                    ? (item.imageUrl.startsWith('http')
+                                                        ? item.imageUrl
+                                                        : `http://192.168.10.55:8080${item.imageUrl}`)
+                                                    : 'https://via.placeholder.com/100'}
                                                 alt={item.goodsName}
                                                 className="img-fluid rounded"
                                                 onClick={() => navigate(`/goods/${item.goodsId}`)}

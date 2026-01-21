@@ -28,8 +28,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static com.project.shop.global.error.ErrorCode.*;
@@ -43,6 +45,7 @@ public class GoodsServiceImpl implements GoodsService {
     //private String bucket;
 
     private final LocalFileService localFileService;
+    private final Optional<S3Service> s3Service;
     private final GoodsRepository goodsRepository;
     private final ImageRepository imageRepository;
     private final OptionRepository optionRepository;
@@ -81,8 +84,7 @@ public class GoodsServiceImpl implements GoodsService {
 
         // 이미지 정보 저장 (이미지가 있는 경우에만)
         if (imgPaths != null && !imgPaths.isEmpty()) {
-            // 로컬 파일 시스템에 저장
-            List<String> list = localFileService.upload(imgPaths);
+            List<String> list = uploadImages(imgPaths);
 
             // 이미지 DB 저장
             List<Image> imageList = list.stream().map(img -> Image.builder().fileUrl(img).goods(goods).build()).collect(Collectors.toList());
@@ -229,16 +231,12 @@ public class GoodsServiceImpl implements GoodsService {
 
         // 이미지 정보 저장 (이미지가 있는 경우에만)
         if (imgPaths != null && !imgPaths.isEmpty()) {
-            // 로컬 파일, 이미지DB 삭제 (기존 이미지 삭제)
+            // 기존 이미지/파일 삭제
             List<Image> imageList = imageRepository.findByGoodsId(goods.getId());
-            for (Image image : imageList) {
-                String fileName = image.getFileUrl();
-                localFileService.deleteFile(fileName);
-                imageRepository.deleteById(image.getId());
-            }
+            deleteImageFiles(imageList);
+            imageRepository.deleteAll(imageList);
 
-            // 로컬 파일 시스템에 이미지 저장
-            List<String> list = localFileService.upload(imgPaths);
+            List<String> list = uploadImages(imgPaths);
 
             // 이미지 정보 저장
             List<Image> images = list.stream().map(img -> Image.builder().fileUrl(img).goods(goods).build()).collect(Collectors.toList());
@@ -264,10 +262,7 @@ public class GoodsServiceImpl implements GoodsService {
         // 로컬 파일 이미지 삭제
         List<Image> imageList = imageRepository.findByGoodsId(goods.getId());
 
-        for (Image image : imageList) {
-            String fileName = image.getFileUrl();
-            localFileService.deleteFile(fileName);
-        }
+        deleteImageFiles(imageList);
         goodsRepository.deleteById(goods.getId());
     }
 
@@ -303,5 +298,37 @@ public class GoodsServiceImpl implements GoodsService {
     private Member getMember() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         return memberRepository.findByLoginId(authentication.getName()).orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND_MEMBER));
+    }
+
+    private List<String> uploadImages(List<MultipartFile> imgPaths) {
+        if (s3Service.isPresent()) {
+            List<String> fileUrlList = new ArrayList<>();
+            for (MultipartFile file : imgPaths) {
+                if (file == null || file.isEmpty()) {
+                    continue;
+                }
+                try {
+                    fileUrlList.add(s3Service.get().uploadFile(file));
+                } catch (IOException e) {
+                    throw new BusinessException(UPLOAD_ERROR_IMAGE);
+                }
+            }
+            return fileUrlList;
+        }
+        return localFileService.upload(imgPaths);
+    }
+
+    private void deleteImageFiles(List<Image> imageList) {
+        if (imageList == null || imageList.isEmpty()) {
+            return;
+        }
+        for (Image image : imageList) {
+            String fileName = image.getFileUrl();
+            if (s3Service.isPresent()) {
+                s3Service.get().deleteFile(fileName);
+            } else {
+                localFileService.deleteFile(fileName);
+            }
+        }
     }
 }

@@ -147,7 +147,11 @@ const Home = () => {
                                 <Card className="h-100">
                                     <Card.Img
                                         variant="top"
-                                        src={product.imageList?.[0]?.fileUrl ? `http://192.168.10.55:8080${product.imageList[0].fileUrl}` : 'https://via.placeholder.com/300'}
+                                        src={product.imageList?.[0]?.fileUrl
+                                            ? (product.imageList[0].fileUrl.startsWith('http')
+                                                ? product.imageList[0].fileUrl
+                                                : `http://192.168.10.55:8080${product.imageList[0].fileUrl}`)
+                                            : 'https://via.placeholder.com/300'}
                                     />
                                     <Card.Body>
                                         <Card.Title>{product.goodsName}</Card.Title>

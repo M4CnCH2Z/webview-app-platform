@@ -123,7 +123,11 @@ const GoodsList = () => {
                                 <Card className="h-100 shadow-sm">
                                     <Card.Img
                                         variant="top"
-                                        src={product.imageUrl ? `http://192.168.10.55:8080${product.imageUrl}` : 'https://via.placeholder.com/300'}
+                                        src={product.imageUrl
+                                            ? (product.imageUrl.startsWith('http')
+                                                ? product.imageUrl
+                                                : `http://192.168.10.55:8080${product.imageUrl}`)
+                                            : 'https://via.placeholder.com/300'}
                                         style={{ height: '200px', objectFit: 'cover' }}
                                     />
                                     <Card.Body className="d-flex flex-column">

@@ -30,6 +30,8 @@ spec:
         volumeMounts:
         - name: log-dir
           mountPath: /app/logs
+        - name: upload-dir
+          mountPath: /app/uploads
         startupProbe:
           httpGet:
             path: /actuator/health
@@ -52,6 +54,8 @@ spec:
             memory: "1Gi"
       volumes:
       - name: log-dir
+        emptyDir: {}
+      - name: upload-dir
         emptyDir: {}
 ---
 apiVersion: v1
