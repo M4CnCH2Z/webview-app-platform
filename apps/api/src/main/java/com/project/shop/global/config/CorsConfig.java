@@ -23,11 +23,7 @@ public class CorsConfig {
         "http://192.168.10.55:3000",    // 가상머신 IP를 통한 접속 허용 (본인의 VM IP 입력)
         "http://192.168.10.55:3001",    // 가상머신 IP를 통한 접속 허용 (포트 변경)
         "http://127.0.0.1:3000",       // 루프백 주소 추가
-        "http://127.0.0.1:3001",       // 루프백 주소 추가 (포트 변경)
-        "https://m4cnch2z.site",
-        "https://www.m4cnch2z.site",
-        "https://test.m4cnch2z.site",
-        "https://www.test.m4cnch2z.site"
+        "http://127.0.0.1:3001"        // 루프백 주소 추가 (포트 변경)
           ));
 
 
