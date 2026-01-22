@@ -4,3 +4,4 @@ resources:
   - api.yaml
   - web.yaml
   - mysql.yaml
+  - redis.yaml
