@@ -19,8 +19,11 @@ public class CorsConfig {
         
          configuration.setAllowedOrigins(Arrays.asList(
         "http://localhost:3000",       // 로컬 테스트용
+        "http://localhost:3001",       // 로컬 테스트용 (포트 변경)
         "http://192.168.10.55:3000",    // 가상머신 IP를 통한 접속 허용 (본인의 VM IP 입력)
-        "http://127.0.0.1:3000"       // 루프백 주소 추가
+        "http://192.168.10.55:3001",    // 가상머신 IP를 통한 접속 허용 (포트 변경)
+        "http://127.0.0.1:3000",       // 루프백 주소 추가
+        "http://127.0.0.1:3001"        // 루프백 주소 추가 (포트 변경)
           ));
 
 
