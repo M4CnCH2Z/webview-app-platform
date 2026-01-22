@@ -221,6 +221,7 @@ metadata:
     alb.ingress.kubernetes.io/target-type: ip               # Pod IP로 직접 라우팅(권장)
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]' # 80 리슨 (HTTPS 추가 가능)
     alb.ingress.kubernetes.io/healthcheck-path: /api/system/status
+    alb.ingress.kubernetes.io/tags: team=m4cnch2z
 spec:
   rules:
     # 호스트 지정이 없으므로 alb로 들어오는 모든 요청을 이 규칙으로 처리함
