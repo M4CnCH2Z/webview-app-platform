@@ -64,10 +64,10 @@ public class SecurityConfig {
                 // localhost와 IP 주소를 모두 허용하여 CORS preflight 이후 차단 방지
                 .contentSecurityPolicy(csp -> csp
                     .policyDirectives("default-src 'self'; " +
-                                     "script-src 'self' 'unsafe-inline'; " +
-                                     "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; " +
-                                     "img-src 'self' data: blob: http://192.168.10.55:8080 http://localhost:8080; " +
-                                     "connect-src 'self' http://192.168.10.55:8080 http://localhost:8080; " +
+                                     "script-src 'self'; " +
+                                     "style-src 'self' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; " +
+                                     "img-src 'self' data: blob:; " +
+                                     "connect-src 'self'; " +
                                      "font-src 'self' https://cdnjs.cloudflare.com; " +
                                      "frame-ancestors 'none';")
                 )
