@@ -404,6 +404,7 @@ jobs:
           API_IMAGE: ${{ env.API_IMAGE }}
         run: |
           $ws = & wsl.exe wslpath -a -u $env:GITHUB_WORKSPACE
+          & wsl.exe -e bash -lc "cd '$ws' && mkdir -p logs && chmod 777 logs"
           & wsl.exe -e bash -lc "cd '$ws' && API_IMAGE='$env:API_IMAGE' docker compose -f docker-compose.pentest.yml -p local-pentest up -d"
 
       - name: Wait for API Healthy
