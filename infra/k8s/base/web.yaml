@@ -63,6 +63,8 @@ metadata:
     service.beta.kubernetes.io/aws-load-balancer-ssl-ports: "443"
     service.beta.kubernetes.io/aws-load-balancer-backend-protocol: "http"
     service.beta.kubernetes.io/aws-load-balancer-additional-resource-tags: "team=m4cnch2z"
+    service.beta.kubernetes.io/aws-load-balancer-security-groups: "sg-0dc2573f6479609e2"
+    service.beta.kubernetes.io/aws-load-balancer-manage-backend-security-group-rules: "true"
 spec:
   type: LoadBalancer
   selector:
