@@ -389,7 +389,13 @@ jobs:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_DIGEST: ${{ needs.build-image.outputs.image_digest }}
         run: |
-          $apiImage = "$env:ECR_REGISTRY/${{ env.ECR_REPOSITORY }}@$env:IMAGE_DIGEST"
+          if ($env:IMAGE_DIGEST -and -not $env:IMAGE_DIGEST.StartsWith("sha256:")) {
+            $digest = "sha256:$env:IMAGE_DIGEST"
+          } else {
+            $digest = $env:IMAGE_DIGEST
+          }
+          $apiImage = "$env:ECR_REGISTRY/${{ env.ECR_REPOSITORY }}@$digest"
+          Write-Host "API_IMAGE=$apiImage"
           "API_IMAGE=$apiImage" | Out-File -FilePath $env:GITHUB_ENV -Append
           & wsl.exe -e bash -lc "docker pull '$apiImage'"
 
