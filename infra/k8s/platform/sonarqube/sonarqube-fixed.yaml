@@ -217,7 +217,7 @@ metadata:
     # 이 Ingress를 AWS ALB Ingress Controller가 처리하도록 지정
     kubernetes.io/ingress.class: alb
     # ALB를 internal 로 생성 -> vpc 내부에서만 접근 가능 (사내망/프라이빗망용)
-    alb.ingress.kubernetes.io/scheme: internal              # ✅ 사내망(internal) ALB
+    alb.ingress.kubernetes.io/scheme: internet-facing              # ✅ 사내망(internal) ALB
     alb.ingress.kubernetes.io/target-type: ip               # Pod IP로 직접 라우팅(권장)
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]' # 80 리슨 (HTTPS 추가 가능)
     alb.ingress.kubernetes.io/healthcheck-path: /api/system/status
