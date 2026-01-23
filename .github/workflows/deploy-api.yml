@@ -48,7 +48,7 @@ jobs:
             DIGEST_ONLY="$INPUT_DIGEST"
           fi
 
-          echo "digest=$DIGEST_ONLY" >> $GITHUB_OUTPUT
+          echo "image_digest=$DIGEST_ONLY" >> $GITHUB_OUTPUT
           echo "full_image=" >> $GITHUB_OUTPUT
           echo "IMAGE_DIGEST=$DIGEST_ONLY" >> $GITHUB_ENV
 
