@@ -338,9 +338,6 @@ jobs:
 
   local-pentest:
     runs-on: [self-hosted]
-    defaults:
-      run:
-        shell: 'wsl -e bash -lc "{0}"'
     needs: build-image
     outputs:
       gate_passed: ${{ steps.pentest-decision.outputs.passed }}
@@ -362,19 +359,25 @@ jobs:
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_DIGEST: ${{ needs.build-image.outputs.image_digest }}
+        shell: pwsh
         run: |
-          API_IMAGE="${ECR_REGISTRY}/${{ env.ECR_REPOSITORY }}@${IMAGE_DIGEST}"
-          echo "API_IMAGE=$API_IMAGE" >> $GITHUB_ENV
-          docker pull "$API_IMAGE"
+          $apiImage = "$env:ECR_REGISTRY/${{ env.ECR_REPOSITORY }}@$env:IMAGE_DIGEST"
+          "API_IMAGE=$apiImage" | Out-File -FilePath $env:GITHUB_ENV -Append
+          & wsl.exe -e bash -lc "docker pull '$apiImage'"
 
       - name: Start Local Target (Docker Compose)
         env:
           API_IMAGE: ${{ env.API_IMAGE }}
+        shell: pwsh
         run: |
-          docker compose -f docker-compose.pentest.yml -p local-pentest up -d
+          $ws = & wsl.exe wslpath "$env:GITHUB_WORKSPACE"
+          & wsl.exe -e bash -lc "cd '$ws' && docker compose -f docker-compose.pentest.yml -p local-pentest up -d"
 
       - name: Wait for API Healthy
+        shell: pwsh
         run: |
+          $ws = & wsl.exe wslpath "$env:GITHUB_WORKSPACE"
+          $script = @'
           API_CID=$(docker compose -f docker-compose.pentest.yml -p local-pentest ps -q api)
           if [ -z "$API_CID" ]; then
             echo "API 컨테이너를 찾을 수 없습니다."
@@ -393,13 +396,20 @@ jobs:
 
           echo "API healthcheck 타임아웃"
           exit 1
+          '@
+          & wsl.exe -e bash -lc "cd '$ws' && $script"
 
       - name: Fetch OpenAPI JSON
         env:
           OPENAPI_URL: http://api:8080/v3/api-docs
+        shell: pwsh
         run: |
+          $ws = & wsl.exe wslpath "$env:GITHUB_WORKSPACE"
+          $script = @"
           mkdir -p artifacts
-          curl -sS "$OPENAPI_URL" -o artifacts/openapi.json
+          curl -sS '$env:OPENAPI_URL' -o artifacts/openapi.json
+          "@
+          & wsl.exe -e bash -lc "cd '$ws' && $script"
 
       - name: Request Pentest Run
         env:
@@ -410,29 +420,32 @@ jobs:
           TARGET_URL: http://api:8080
           RELEASE_ID: ${{ needs.build-image.outputs.image_digest }}
           RUN_ID: ${{ github.run_id }}
+        shell: pwsh
         run: |
-          if [ -z "$PENTEST_API_URL" ]; then
-            echo "PENTEST_API_URL이 설정되지 않았습니다."
+          if (-not $env:PENTEST_API_URL) {
+            Write-Host "PENTEST_API_URL이 설정되지 않았습니다."
             exit 1
-          fi
+          }
 
+          $ws = & wsl.exe wslpath "$env:GITHUB_WORKSPACE"
+          $script = @"
           AUTH_CREDENTIALS_ARG=""
-          if [ -n "$PENTEST_AUTH_CREDENTIALS_JSON" ]; then
-            echo "$PENTEST_AUTH_CREDENTIALS_JSON" | jq empty || {
+          if [ -n "$env:PENTEST_AUTH_CREDENTIALS_JSON" ]; then
+            echo "$env:PENTEST_AUTH_CREDENTIALS_JSON" | jq empty || {
               echo "PENTEST_AUTH_CREDENTIALS_JSON이 유효한 JSON이 아닙니다."
               exit 1
             }
-            AUTH_CREDENTIALS_ARG="--argjson auth_credentials $PENTEST_AUTH_CREDENTIALS_JSON"
+            AUTH_CREDENTIALS_ARG="--argjson auth_credentials $env:PENTEST_AUTH_CREDENTIALS_JSON"
           fi
 
-          REQUEST_BODY=$(jq -n \
-            --arg target_url "$TARGET_URL" \
-            --arg release_id "$RELEASE_ID" \
-            --arg run_id "$RUN_ID" \
-            --arg auth_username "${PENTEST_AUTH_USERNAME:-}" \
-            --arg auth_password "${PENTEST_AUTH_PASSWORD:-}" \
+          REQUEST_BODY=\$(jq -n \
+            --arg target_url "$env:TARGET_URL" \
+            --arg release_id "$env:RELEASE_ID" \
+            --arg run_id "$env:RUN_ID" \
+            --arg auth_username "$env:PENTEST_AUTH_USERNAME" \
+            --arg auth_password "$env:PENTEST_AUTH_PASSWORD" \
             --argfile openapi artifacts/openapi.json \
-            $AUTH_CREDENTIALS_ARG \
+            \$AUTH_CREDENTIALS_ARG \
             '{
               target_url: $target_url,
               spec: $openapi,
@@ -442,36 +455,40 @@ jobs:
             + (if $auth_username != "" and $auth_password != "" then {auth_username:$auth_username,auth_password:$auth_password} else {} end)
             + (if (has("auth_credentials")) then {auth_credentials:$auth_credentials} else {} end)')
 
-          RESPONSE=$(curl -sS -X POST "${PENTEST_API_URL%/}/api-calls" \
+          RESPONSE=\$(curl -sS -X POST "${env:PENTEST_API_URL%/}/api-calls" \
             -H "Content-Type: application/json" \
-            -d "$REQUEST_BODY")
+            -d "\$REQUEST_BODY")
 
-          echo "$RESPONSE" > artifacts/pentest-run.json
-          RUN_TOKEN=$(echo "$RESPONSE" | jq -r '.run_id // empty')
+          echo "\$RESPONSE" > artifacts/pentest-run.json
+          RUN_TOKEN=\$(echo "\$RESPONSE" | jq -r '.run_id // empty')
 
-          if [ -z "$RUN_TOKEN" ]; then
+          if [ -z "\$RUN_TOKEN" ]; then
             echo "펜테스트 실행 요청 실패:"
-            echo "$RESPONSE"
+            echo "\$RESPONSE"
             exit 1
           fi
-
-          echo "RUN_TOKEN=$RUN_TOKEN" >> $GITHUB_ENV
+          echo "\$RUN_TOKEN"
+          "@
+          $runToken = & wsl.exe -e bash -lc "cd '$ws' && $script"
+          "RUN_TOKEN=$runToken" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Wait for Pentest Result
         env:
           PENTEST_API_URL: ${{ secrets.PENTEST_API_URL }}
+        shell: pwsh
         run: |
-          for i in $(seq 1 30); do
-            RESULT=$(curl -sS -X GET "${PENTEST_API_URL%/}/api-calls/${RUN_TOKEN}" \
-              )
-            STATUS=$(echo "$RESULT" | jq -r '.status // "unknown"')
+          $ws = & wsl.exe wslpath "$env:GITHUB_WORKSPACE"
+          $script = @"
+          for i in \$(seq 1 30); do
+            RESULT=\$(curl -sS -X GET "${env:PENTEST_API_URL%/}/api-calls/$env:RUN_TOKEN")
+            STATUS=\$(echo "\$RESULT" | jq -r '.status // "unknown"')
 
-            if [ "$STATUS" = "done" ] || [ "$STATUS" = "failed" ]; then
-              echo "$RESULT" > artifacts/pentest-result.json
+            if [ "\$STATUS" = "done" ] || [ "\$STATUS" = "failed" ]; then
+              echo "\$RESULT" > artifacts/pentest-result.json
               break
             fi
 
-            echo "펜테스트 진행 중... ($i/30) - $STATUS"
+            echo "펜테스트 진행 중... (\$i/30) - \$STATUS"
             sleep 10
           done
 
@@ -479,36 +496,43 @@ jobs:
             echo "펜테스트 결과 타임아웃"
             exit 1
           fi
+          "@
+          & wsl.exe -e bash -lc "cd '$ws' && $script"
 
       - name: Download Pentest Report
+        shell: pwsh
         run: |
-          cp artifacts/pentest-result.json artifacts/raw_report.json
+          $ws = & wsl.exe wslpath "$env:GITHUB_WORKSPACE"
+          & wsl.exe -e bash -lc "cd '$ws' && cp artifacts/pentest-result.json artifacts/raw_report.json"
 
       - name: Build Pentest Summary
         env:
           RELEASE_ID: ${{ needs.build-image.outputs.image_digest }}
           RUN_ID: ${{ github.run_id }}
+        shell: pwsh
         run: |
+          $ws = & wsl.exe wslpath "$env:GITHUB_WORKSPACE"
+          $script = @"
           RAW_REPORT="artifacts/raw_report.json"
-          if [ ! -f "$RAW_REPORT" ]; then
-            echo '{"error":"raw_report.json not found"}' > "$RAW_REPORT"
+          if [ ! -f "\$RAW_REPORT" ]; then
+            echo '{"error":"raw_report.json not found"}' > "\$RAW_REPORT"
             echo '{"summary":{"tool":"custom-pentest","findings_total":0,"findings_high":0,"findings_medium":0,"findings_low":0},"metadata":{"note":"raw_report.json not found"}}' > artifacts/results.json
             exit 0
           fi
 
-          TOTAL=$(jq '[.result.findings[]?] | length' "$RAW_REPORT" 2>/dev/null || echo 0)
-          HIGH=$(jq '[.result.findings[]? | select(.severity=="HIGH")] | length' "$RAW_REPORT" 2>/dev/null || echo 0)
-          MEDIUM=$(jq '[.result.findings[]? | select(.severity=="MEDIUM")] | length' "$RAW_REPORT" 2>/dev/null || echo 0)
-          LOW=$(jq '[.result.findings[]? | select(.severity=="LOW")] | length' "$RAW_REPORT" 2>/dev/null || echo 0)
+          TOTAL=\$(jq '[.result.findings[]?] | length' "\$RAW_REPORT" 2>/dev/null || echo 0)
+          HIGH=\$(jq '[.result.findings[]? | select(.severity=="HIGH")] | length' "\$RAW_REPORT" 2>/dev/null || echo 0)
+          MEDIUM=\$(jq '[.result.findings[]? | select(.severity=="MEDIUM")] | length' "\$RAW_REPORT" 2>/dev/null || echo 0)
+          LOW=\$(jq '[.result.findings[]? | select(.severity=="LOW")] | length' "\$RAW_REPORT" 2>/dev/null || echo 0)
 
           jq -n \
-            --arg release_id "$RELEASE_ID" \
-            --arg run_id "$RUN_ID" \
+            --arg release_id "$env:RELEASE_ID" \
+            --arg run_id "$env:RUN_ID" \
             --arg report_file "raw_report.json" \
-            --argjson total "$TOTAL" \
-            --argjson high "$HIGH" \
-            --argjson medium "$MEDIUM" \
-            --argjson low "$LOW" \
+            --argjson total "\$TOTAL" \
+            --argjson high "\$HIGH" \
+            --argjson medium "\$MEDIUM" \
+            --argjson low "\$LOW" \
             '{
               summary: {
                 tool: "custom-pentest",
@@ -523,6 +547,8 @@ jobs:
                 raw_report: $report_file
               }
             }' > artifacts/results.json
+          "@
+          & wsl.exe -e bash -lc "cd '$ws' && $script"
 
       - name: Upload Pentest Evidence to Security Gate
         env:
@@ -534,13 +560,16 @@ jobs:
           SG_ARTIFACT_NAME: raw_report.json
           SG_RELEASE_ID: ${{ needs.build-image.outputs.image_digest }}
           SG_SUMMARY_FILE: artifacts/results.json
+        shell: pwsh
         run: |
-          chmod +x .github/scripts/sg-upload.sh
-          .github/scripts/sg-upload.sh artifacts/raw_report.json 0
+          $ws = & wsl.exe wslpath "$env:GITHUB_WORKSPACE"
+          & wsl.exe -e bash -lc "cd '$ws' && chmod +x .github/scripts/sg-upload.sh && .github/scripts/sg-upload.sh artifacts/raw_report.json 0"
 
       - name: Evaluate Local Pentest Gate
         id: pentest-decision
+        shell: pwsh
         run: |
+          $script = @'
           DECISION=$(jq -r '.decision // "UNKNOWN"' /tmp/sg-eval-result 2>/dev/null || echo "UNKNOWN")
           DECISION_ID=$(jq -r '.decision_id // ""' /tmp/sg-eval-result 2>/dev/null || echo "")
           REASONS=$(jq -c '.reasons // []' /tmp/sg-eval-result 2>/dev/null || echo "[]")
@@ -562,6 +591,9 @@ jobs:
           if [ "$GATE_PASSED" != "true" ]; then
             exit 1
           fi
+          '@
+          $ws = & wsl.exe wslpath "$env:GITHUB_WORKSPACE"
+          & wsl.exe -e bash -lc "cd '$ws' && $script"
 
       - name: Upload Pentest Artifacts
         if: always()
@@ -578,8 +610,10 @@ jobs:
 
       - name: Cleanup Local Containers
         if: always()
+        shell: pwsh
         run: |
-          docker compose -f docker-compose.pentest.yml -p local-pentest down -v
+          $ws = & wsl.exe wslpath "$env:GITHUB_WORKSPACE"
+          & wsl.exe -e bash -lc "cd '$ws' && docker compose -f docker-compose.pentest.yml -p local-pentest down -v"
 
   deploy-secrets:
     runs-on: ubuntu-latest
