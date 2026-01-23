@@ -412,7 +412,6 @@ jobs:
           API_IMAGE: ${{ env.API_IMAGE }}
         run: |
           $ws = & wsl.exe wslpath -a -u $env:GITHUB_WORKSPACE
-          $scriptPath = Join-Path $env:GITHUB_WORKSPACE "artifacts\wait-api.sh"
           $script = @'
           API_CID=$(docker compose -f docker-compose.pentest.yml -p local-pentest ps -q api)
           if [ -z "$API_CID" ]; then
@@ -433,9 +432,9 @@ jobs:
           echo "API healthcheck 타임아웃"
           exit 1
           '@
-          New-Item -ItemType Directory -Force -Path (Split-Path $scriptPath) | Out-Null
-          [System.IO.File]::WriteAllText($scriptPath, ($script -replace "`r`n", "`n"))
-          & wsl.exe -e bash -lc "cd '$ws' && API_IMAGE='$env:API_IMAGE' bash ./artifacts/wait-api.sh"
+          $bytes = [System.Text.Encoding]::UTF8.GetBytes($script)
+          $b64 = [System.Convert]::ToBase64String($bytes)
+          & wsl.exe -e bash -lc "cd '$ws' && echo '$b64' | base64 -d > /tmp/wait-api.sh && bash /tmp/wait-api.sh"
 
       - name: Fetch OpenAPI JSON
         env:
