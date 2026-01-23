@@ -639,7 +639,7 @@ jobs:
           retention-days: 7
 
       - name: Cleanup Local Containers
-        if: always()
+        if: always() && steps.pentest-decision.outputs.passed == 'true'
         env:
           API_IMAGE: ${{ env.API_IMAGE }}
         run: |
