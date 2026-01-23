@@ -427,7 +427,7 @@ jobs:
           exit 1
           '@
           New-Item -ItemType Directory -Force -Path (Split-Path $scriptPath) | Out-Null
-          Set-Content -Path $scriptPath -Value $script -Encoding ASCII
+          [System.IO.File]::WriteAllText($scriptPath, ($script -replace "`r`n", "`n"))
           & wsl.exe -e bash -lc "cd '$ws' && API_IMAGE='$env:API_IMAGE' bash ./artifacts/wait-api.sh"
 
       - name: Fetch OpenAPI JSON
