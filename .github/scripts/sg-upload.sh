@@ -13,6 +13,12 @@ SG_API_URL="${SG_API_URL:-$SECURITY_GATE_URL}"
 SG_API_SECRET="${SG_API_SECRET:-$SECURITY_GATE_HMAC_SECRET}"
 COMMIT_SHA=${GITHUB_SHA:-$(git rev-parse HEAD)}
 REPO=${GITHUB_REPOSITORY:-$(git config --get remote.origin.url | sed -n 's#.*/\\(.*\\)\\.git#\\1#p')}
+SG_ENV="${SG_ENV:-pr}"
+SG_GATE="${SG_GATE:-PR}"
+SG_EVIDENCE_TYPE="${SG_EVIDENCE_TYPE:-SAST}"
+SG_ARTIFACT_NAME="${SG_ARTIFACT_NAME:-report.json}"
+SG_RELEASE_ID="${SG_RELEASE_ID:-}"
+SG_SUMMARY_FILE="${SG_SUMMARY_FILE:-}"
 
 # 파일의 지문(SHA256) 계산 
 FILE_SHA=$(sha256sum "$REPORT_FILE" 2>/dev/null | cut -d' ' -f1 || shasum -a 256 "$REPORT_FILE" | cut -d' ' -f1)
@@ -28,6 +34,20 @@ fi
 echo "FILE_SHA: $FILE_SHA"
 echo "FILE_SIZE: $FILE_SIZE"
 echo "SG 전송 시작: $REPORT_FILE (Size: $FILE_SIZE, Commit: $COMMIT_SHA)"
+
+# release_id 결정 (기본: 파일 SHA, 필요 시 override)
+if [ -n "$SG_RELEASE_ID" ]; then
+  if [[ "$SG_RELEASE_ID" == sha256:* ]]; then
+    RELEASE_ID="$SG_RELEASE_ID"
+  else
+    RELEASE_ID="sha256:$SG_RELEASE_ID"
+  fi
+else
+  RELEASE_ID="sha256:$FILE_SHA"
+fi
+
+echo "Release ID: $RELEASE_ID"
+echo "Environment: $SG_ENV, Gate: $SG_GATE, Evidence: $SG_EVIDENCE_TYPE"
 
 # =============================================================================
 # HMAC-SHA256 서명 함수
@@ -75,18 +95,27 @@ sg_request() {
 # ---------------------------------------------------------
 echo "=== 입력 파일 확인 ==="
 DEDUP_FILE="$(dirname "$REPORT_FILE")/deduplicated-results.json"
-if [ ! -f "$DEDUP_FILE" ]; then
-  echo "파일 없음: $DEDUP_FILE"
-  exit 1
+SUMMARY_SOURCE="${SG_SUMMARY_FILE:-$DEDUP_FILE}"
+
+if [ -z "$SG_SUMMARY_FILE" ]; then
+  if [ ! -f "$DEDUP_FILE" ]; then
+    echo "파일 없음: $DEDUP_FILE"
+    exit 1
+  fi
+else
+  if [ ! -f "$SUMMARY_SOURCE" ]; then
+    echo "파일 없음: $SUMMARY_SOURCE"
+    exit 1
+  fi
 fi
 
-echo "📄 deduplicated-results.json 내용 (첫 500자):"
-head -c 500 "$DEDUP_FILE"
+echo "📄 요약 입력 파일 내용 (첫 500자): $SUMMARY_SOURCE"
+head -c 500 "$SUMMARY_SOURCE"
 echo ""
 
 # JSON 유효성 검사
-if ! jq empty "$DEDUP_FILE" 2>/dev/null; then
-  echo "Invalid JSON in $DEDUP_FILE"
+if ! jq empty "$SUMMARY_SOURCE" 2>/dev/null; then
+  echo "Invalid JSON in $SUMMARY_SOURCE"
   exit 1
 fi
 echo "JSON 유효성 검사 통과"
@@ -108,7 +137,7 @@ fi
 
 # Presign 요청 페이로드 생성
 PRESIGN_PAYLOAD=$(cat <<EOF
-{"release_id":"sha256:$FILE_SHA","env":"pr","gate":"PR","evidence_type":"SAST","artifact_name":"report.json","content_type":"application/json","content_length":$FILE_SIZE,"sha256":"$FILE_SHA","producer":{"repo":"${GITHUB_REPOSITORY:-unknown}","workflow":"${GITHUB_WORKFLOW:-unknown}","job":"${GITHUB_JOB:-unknown}","run_id":"${GITHUB_RUN_ID:-0}","attempt":${GITHUB_RUN_ATTEMPT:-1},"actor":"${GITHUB_ACTOR:-unknown}"},"commit_sha":"$COMMIT_SHA","pr_number":$PR_NUMBER}
+{"release_id":"$RELEASE_ID","env":"$SG_ENV","gate":"$SG_GATE","evidence_type":"$SG_EVIDENCE_TYPE","artifact_name":"$SG_ARTIFACT_NAME","content_type":"application/json","content_length":$FILE_SIZE,"sha256":"$FILE_SHA","producer":{"repo":"${GITHUB_REPOSITORY:-unknown}","workflow":"${GITHUB_WORKFLOW:-unknown}","job":"${GITHUB_JOB:-unknown}","run_id":"${GITHUB_RUN_ID:-0}","attempt":${GITHUB_RUN_ATTEMPT:-1},"actor":"${GITHUB_ACTOR:-unknown}"},"commit_sha":"$COMMIT_SHA","pr_number":$PR_NUMBER}
 EOF
 )
 
@@ -152,7 +181,7 @@ echo "S3 업로드 성공"
 echo "SG에 최종 요약본(Summary) 보고 중..."
 
 # Summary 추출 및 검증
-SUMMARY=$(jq -c '.summary // empty' "$DEDUP_FILE")
+SUMMARY=$(jq -c '.summary // . // empty' "$SUMMARY_SOURCE")
 
 if [ -z "$SUMMARY" ] || [ "$SUMMARY" == "null" ]; then
   echo "summary 필드 없음, 기본값 사용"
@@ -164,7 +193,7 @@ echo "Summary 값: $SUMMARY"
 # Complete 요청 페이로드 (한 줄로 - 서명 계산 시 일관성 유지)
 ISSUED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 COMPLETE_PAYLOAD=$(cat <<EOF
-{"evidence_id":"$EVIDENCE_ID","release_id":"sha256:$FILE_SHA","env":"pr","gate":"PR","evidence_type":"SAST","s3_key":"$S3_KEY","sha256":"$FILE_SHA","size":$FILE_SIZE,"issued_at":"$ISSUED_AT","parser_version":"1.0.0","summary":$SUMMARY,"producer":{"repo":"${GITHUB_REPOSITORY:-unknown}","workflow":"${GITHUB_WORKFLOW:-unknown}","job":"${GITHUB_JOB:-unknown}","run_id":"${GITHUB_RUN_ID:-0}","attempt":${GITHUB_RUN_ATTEMPT:-1},"actor":"${GITHUB_ACTOR:-unknown}"},"commit_sha":"$COMMIT_SHA","pr_number":$PR_NUMBER}
+{"evidence_id":"$EVIDENCE_ID","release_id":"$RELEASE_ID","env":"$SG_ENV","gate":"$SG_GATE","evidence_type":"$SG_EVIDENCE_TYPE","s3_key":"$S3_KEY","sha256":"$FILE_SHA","size":$FILE_SIZE,"issued_at":"$ISSUED_AT","parser_version":"1.0.0","summary":$SUMMARY,"producer":{"repo":"${GITHUB_REPOSITORY:-unknown}","workflow":"${GITHUB_WORKFLOW:-unknown}","job":"${GITHUB_JOB:-unknown}","run_id":"${GITHUB_RUN_ID:-0}","attempt":${GITHUB_RUN_ATTEMPT:-1},"actor":"${GITHUB_ACTOR:-unknown}"},"commit_sha":"$COMMIT_SHA","pr_number":$PR_NUMBER}
 EOF
 )
 
@@ -181,7 +210,7 @@ echo "Complete 응답: $COMPLETE_RES"
 echo "최종 판정(Evaluate) 요청 중..."
 
 EVAL_PAYLOAD=$(cat <<EOF
-{"release_id":"sha256:$FILE_SHA","env":"pr","gate":"PR","context":{"repo":"$REPO","pr_number":$PR_NUMBER,"commit_sha":"$COMMIT_SHA"}}
+{"release_id":"$RELEASE_ID","env":"$SG_ENV","gate":"$SG_GATE","context":{"repo":"$REPO","pr_number":$PR_NUMBER,"commit_sha":"$COMMIT_SHA"}}
 EOF
 )
 

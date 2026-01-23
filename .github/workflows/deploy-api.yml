@@ -336,11 +336,256 @@ jobs:
 
           exit 1
 
+  local-pentest:
+    runs-on: [self-hosted]
+    defaults:
+      run:
+        shell: bash
+    needs: build-image
+    outputs:
+      gate_passed: ${{ steps.pentest-decision.outputs.passed }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Pull Image by Digest
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_DIGEST: ${{ needs.build-image.outputs.image_digest }}
+        run: |
+          API_IMAGE="${ECR_REGISTRY}/${{ env.ECR_REPOSITORY }}@${IMAGE_DIGEST}"
+          echo "API_IMAGE=$API_IMAGE" >> $GITHUB_ENV
+          docker pull "$API_IMAGE"
+
+      - name: Start Local Target (Docker Compose)
+        env:
+          API_IMAGE: ${{ env.API_IMAGE }}
+        run: |
+          docker compose -f docker-compose.pentest.yml -p local-pentest up -d
+
+      - name: Wait for API Healthy
+        run: |
+          API_CID=$(docker compose -f docker-compose.pentest.yml -p local-pentest ps -q api)
+          if [ -z "$API_CID" ]; then
+            echo "API 컨테이너를 찾을 수 없습니다."
+            exit 1
+          fi
+
+          for i in $(seq 1 30); do
+            STATUS=$(docker inspect -f '{{.State.Health.Status}}' "$API_CID" 2>/dev/null || echo "starting")
+            if [ "$STATUS" = "healthy" ]; then
+              echo "API가 정상 상태입니다."
+              exit 0
+            fi
+            echo "API 상태 대기 중... ($i/30) - $STATUS"
+            sleep 5
+          done
+
+          echo "API healthcheck 타임아웃"
+          exit 1
+
+      - name: Fetch OpenAPI JSON
+        env:
+          OPENAPI_URL: http://api:8080/v3/api-docs
+        run: |
+          mkdir -p artifacts
+          curl -sS "$OPENAPI_URL" -o artifacts/openapi.json
+
+      - name: Request Pentest Run
+        env:
+          PENTEST_API_URL: ${{ secrets.PENTEST_API_URL }}
+          PENTEST_AUTH_USERNAME: ${{ secrets.PENTEST_AUTH_USERNAME }}
+          PENTEST_AUTH_PASSWORD: ${{ secrets.PENTEST_AUTH_PASSWORD }}
+          PENTEST_AUTH_CREDENTIALS_JSON: ${{ secrets.PENTEST_AUTH_CREDENTIALS_JSON }}
+          TARGET_URL: http://api:8080
+          RELEASE_ID: ${{ needs.build-image.outputs.image_digest }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          if [ -z "$PENTEST_API_URL" ]; then
+            echo "PENTEST_API_URL이 설정되지 않았습니다."
+            exit 1
+          fi
+
+          AUTH_CREDENTIALS_ARG=""
+          if [ -n "$PENTEST_AUTH_CREDENTIALS_JSON" ]; then
+            echo "$PENTEST_AUTH_CREDENTIALS_JSON" | jq empty || {
+              echo "PENTEST_AUTH_CREDENTIALS_JSON이 유효한 JSON이 아닙니다."
+              exit 1
+            }
+            AUTH_CREDENTIALS_ARG="--argjson auth_credentials $PENTEST_AUTH_CREDENTIALS_JSON"
+          fi
+
+          REQUEST_BODY=$(jq -n \
+            --arg target_url "$TARGET_URL" \
+            --arg release_id "$RELEASE_ID" \
+            --arg run_id "$RUN_ID" \
+            --arg auth_username "${PENTEST_AUTH_USERNAME:-}" \
+            --arg auth_password "${PENTEST_AUTH_PASSWORD:-}" \
+            --argfile openapi artifacts/openapi.json \
+            $AUTH_CREDENTIALS_ARG \
+            '{
+              target_url: $target_url,
+              spec: $openapi,
+              release_id: $release_id,
+              run_id: $run_id
+            }
+            + (if $auth_username != "" and $auth_password != "" then {auth_username:$auth_username,auth_password:$auth_password} else {} end)
+            + (if (has("auth_credentials")) then {auth_credentials:$auth_credentials} else {} end)')
+
+          RESPONSE=$(curl -sS -X POST "${PENTEST_API_URL%/}/api-calls" \
+            -H "Content-Type: application/json" \
+            -d "$REQUEST_BODY")
+
+          echo "$RESPONSE" > artifacts/pentest-run.json
+          RUN_TOKEN=$(echo "$RESPONSE" | jq -r '.run_id // empty')
+
+          if [ -z "$RUN_TOKEN" ]; then
+            echo "펜테스트 실행 요청 실패:"
+            echo "$RESPONSE"
+            exit 1
+          fi
+
+          echo "RUN_TOKEN=$RUN_TOKEN" >> $GITHUB_ENV
+
+      - name: Wait for Pentest Result
+        env:
+          PENTEST_API_URL: ${{ secrets.PENTEST_API_URL }}
+        run: |
+          for i in $(seq 1 30); do
+            RESULT=$(curl -sS -X GET "${PENTEST_API_URL%/}/api-calls/${RUN_TOKEN}" \
+              )
+            STATUS=$(echo "$RESULT" | jq -r '.status // "unknown"')
+
+            if [ "$STATUS" = "done" ] || [ "$STATUS" = "failed" ]; then
+              echo "$RESULT" > artifacts/pentest-result.json
+              break
+            fi
+
+            echo "펜테스트 진행 중... ($i/30) - $STATUS"
+            sleep 10
+          done
+
+          if [ ! -f artifacts/pentest-result.json ]; then
+            echo "펜테스트 결과 타임아웃"
+            exit 1
+          fi
+
+      - name: Download Pentest Report
+        run: |
+          cp artifacts/pentest-result.json artifacts/raw_report.json
+
+      - name: Build Pentest Summary
+        env:
+          RELEASE_ID: ${{ needs.build-image.outputs.image_digest }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          RAW_REPORT="artifacts/raw_report.json"
+          if [ ! -f "$RAW_REPORT" ]; then
+            echo '{"error":"raw_report.json not found"}' > "$RAW_REPORT"
+            echo '{"summary":{"tool":"custom-pentest","findings_total":0,"findings_high":0,"findings_medium":0,"findings_low":0},"metadata":{"note":"raw_report.json not found"}}' > artifacts/results.json
+            exit 0
+          fi
+
+          TOTAL=$(jq '[.result.findings[]?] | length' "$RAW_REPORT" 2>/dev/null || echo 0)
+          HIGH=$(jq '[.result.findings[]? | select(.severity=="HIGH")] | length' "$RAW_REPORT" 2>/dev/null || echo 0)
+          MEDIUM=$(jq '[.result.findings[]? | select(.severity=="MEDIUM")] | length' "$RAW_REPORT" 2>/dev/null || echo 0)
+          LOW=$(jq '[.result.findings[]? | select(.severity=="LOW")] | length' "$RAW_REPORT" 2>/dev/null || echo 0)
+
+          jq -n \
+            --arg release_id "$RELEASE_ID" \
+            --arg run_id "$RUN_ID" \
+            --arg report_file "raw_report.json" \
+            --argjson total "$TOTAL" \
+            --argjson high "$HIGH" \
+            --argjson medium "$MEDIUM" \
+            --argjson low "$LOW" \
+            '{
+              summary: {
+                tool: "custom-pentest",
+                findings_total: $total,
+                findings_high: $high,
+                findings_medium: $medium,
+                findings_low: $low
+              },
+              metadata: {
+                release_id: $release_id,
+                run_id: $run_id,
+                raw_report: $report_file
+              }
+            }' > artifacts/results.json
+
+      - name: Upload Pentest Evidence to Security Gate
+        env:
+          SECURITY_GATE_URL: ${{ secrets.SECURITY_GATE_URL }}
+          SECURITY_GATE_HMAC_SECRET: ${{ secrets.SECURITY_GATE_HMAC_SECRET }}
+          SG_ENV: local
+          SG_GATE: LOCAL_PENTEST
+          SG_EVIDENCE_TYPE: LOCAL_PENTEST
+          SG_ARTIFACT_NAME: raw_report.json
+          SG_RELEASE_ID: ${{ needs.build-image.outputs.image_digest }}
+          SG_SUMMARY_FILE: artifacts/results.json
+        run: |
+          chmod +x .github/scripts/sg-upload.sh
+          .github/scripts/sg-upload.sh artifacts/raw_report.json 0
+
+      - name: Evaluate Local Pentest Gate
+        id: pentest-decision
+        run: |
+          DECISION=$(jq -r '.decision // "UNKNOWN"' /tmp/sg-eval-result 2>/dev/null || echo "UNKNOWN")
+          DECISION_ID=$(jq -r '.decision_id // ""' /tmp/sg-eval-result 2>/dev/null || echo "")
+          REASONS=$(jq -c '.reasons // []' /tmp/sg-eval-result 2>/dev/null || echo "[]")
+
+          echo "Decision: $DECISION"
+
+          if [ "$DECISION" == "PASS" ]; then
+            GATE_PASSED="true"
+          else
+            GATE_PASSED="false"
+            echo "Gate 실패 사유:"
+            echo "$REASONS" | jq '.'
+          fi
+
+          echo "decision=$DECISION" >> $GITHUB_OUTPUT
+          echo "decision_id=$DECISION_ID" >> $GITHUB_OUTPUT
+          echo "passed=$GATE_PASSED" >> $GITHUB_OUTPUT
+
+          if [ "$GATE_PASSED" != "true" ]; then
+            exit 1
+          fi
+
+      - name: Upload Pentest Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-pentest-results
+          path: |
+            artifacts/results.json
+            artifacts/raw_report.json
+            artifacts/openapi.json
+            artifacts/pentest-run.json
+            artifacts/pentest-result.json
+          retention-days: 7
+
+      - name: Cleanup Local Containers
+        if: always()
+        run: |
+          docker compose -f docker-compose.pentest.yml -p local-pentest down -v
+
   deploy-secrets:
     runs-on: ubuntu-latest
     environment: staging
-    needs: scan-and-gate
-    if: needs.scan-and-gate.outputs.gate_passed == 'true'
+    needs: [scan-and-gate, local-pentest]
+    if: needs.scan-and-gate.outputs.gate_passed == 'true' && needs.local-pentest.outputs.gate_passed == 'true'
     steps:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -371,8 +616,8 @@ jobs:
   update-manifest:
     runs-on: ubuntu-latest
     environment: staging
-    needs: [build-image, scan-and-gate, deploy-secrets]
-    if: needs.scan-and-gate.outputs.gate_passed == 'true'
+    needs: [build-image, scan-and-gate, local-pentest, deploy-secrets]
+    if: needs.scan-and-gate.outputs.gate_passed == 'true' && needs.local-pentest.outputs.gate_passed == 'true'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
