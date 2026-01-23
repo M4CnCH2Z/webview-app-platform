@@ -7,7 +7,12 @@ on:
       - 'apps/api/**'
       - 'apps/api/**.md'
       - '!infra/k8s/overlays/staging/kustomization.yaml' # 배포 설정 파일 변경은 무시 (무한 루프 방지)
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      image_digest:
+        description: '기존 이미지 digest(sha256:... 또는 해시)로 재실행'
+        required: false
+        type: string
 
 env:
   AWS_REGION: ap-northeast-2
@@ -25,13 +30,30 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     outputs:
-      image_digest: ${{ steps.build-image.outputs.digest }}
-      full_image: ${{ steps.build-image.outputs.full_image }}
+      image_digest: ${{ steps.set-digest.outputs.image_digest || steps.build-image.outputs.digest }}
+      full_image: ${{ steps.set-digest.outputs.full_image || steps.build-image.outputs.full_image }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Set Image Digest from Input
+        id: set-digest
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.image_digest != ''
+        env:
+          INPUT_DIGEST: ${{ github.event.inputs.image_digest }}
+        run: |
+          if [[ "$INPUT_DIGEST" == sha256:* ]]; then
+            DIGEST_ONLY="${INPUT_DIGEST#sha256:}"
+          else
+            DIGEST_ONLY="$INPUT_DIGEST"
+          fi
+
+          echo "digest=$DIGEST_ONLY" >> $GITHUB_OUTPUT
+          echo "full_image=" >> $GITHUB_OUTPUT
+          echo "IMAGE_DIGEST=$DIGEST_ONLY" >> $GITHUB_ENV
+
       - name: Set up JDK 21
+        if: github.event_name != 'workflow_dispatch' || github.event.inputs.image_digest == ''
         uses: actions/setup-java@v4
         with:
           java-version: '21'
@@ -39,22 +61,26 @@ jobs:
           cache: 'gradle'
 
       - name: Build with Gradle
+        if: github.event_name != 'workflow_dispatch' || github.event.inputs.image_digest == ''
         working-directory: ./apps/api
         run: |
           chmod +x gradlew
           ./gradlew clean bootJar -x test
 
       - name: Configure AWS Credentials
+        if: github.event_name != 'workflow_dispatch' || github.event.inputs.image_digest == ''
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
+        if: github.event_name != 'workflow_dispatch' || github.event.inputs.image_digest == ''
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build and Push Docker Image
+        if: github.event_name != 'workflow_dispatch' || github.event.inputs.image_digest == ''
         id: build-image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
