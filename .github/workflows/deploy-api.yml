@@ -338,6 +338,9 @@ jobs:
 
   local-pentest:
     runs-on: [self-hosted]
+    defaults:
+      run:
+        shell: powershell
     needs: build-image
     outputs:
       gate_passed: ${{ steps.pentest-decision.outputs.passed }}
@@ -359,7 +362,6 @@ jobs:
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_DIGEST: ${{ needs.build-image.outputs.image_digest }}
-        shell: pwsh
         run: |
           $apiImage = "$env:ECR_REGISTRY/${{ env.ECR_REPOSITORY }}@$env:IMAGE_DIGEST"
           "API_IMAGE=$apiImage" | Out-File -FilePath $env:GITHUB_ENV -Append
@@ -368,13 +370,11 @@ jobs:
       - name: Start Local Target (Docker Compose)
         env:
           API_IMAGE: ${{ env.API_IMAGE }}
-        shell: pwsh
         run: |
           $ws = & wsl.exe wslpath "$env:GITHUB_WORKSPACE"
           & wsl.exe -e bash -lc "cd '$ws' && docker compose -f docker-compose.pentest.yml -p local-pentest up -d"
 
       - name: Wait for API Healthy
-        shell: pwsh
         run: |
           $ws = & wsl.exe wslpath "$env:GITHUB_WORKSPACE"
           $script = @'
@@ -402,7 +402,6 @@ jobs:
       - name: Fetch OpenAPI JSON
         env:
           OPENAPI_URL: http://api:8080/v3/api-docs
-        shell: pwsh
         run: |
           $ws = & wsl.exe wslpath "$env:GITHUB_WORKSPACE"
           $script = @"
@@ -420,7 +419,6 @@ jobs:
           TARGET_URL: http://api:8080
           RELEASE_ID: ${{ needs.build-image.outputs.image_digest }}
           RUN_ID: ${{ github.run_id }}
-        shell: pwsh
         run: |
           if (-not $env:PENTEST_API_URL) {
             Write-Host "PENTEST_API_URL이 설정되지 않았습니다."
@@ -475,7 +473,6 @@ jobs:
       - name: Wait for Pentest Result
         env:
           PENTEST_API_URL: ${{ secrets.PENTEST_API_URL }}
-        shell: pwsh
         run: |
           $ws = & wsl.exe wslpath "$env:GITHUB_WORKSPACE"
           $script = @"
@@ -500,7 +497,6 @@ jobs:
           & wsl.exe -e bash -lc "cd '$ws' && $script"
 
       - name: Download Pentest Report
-        shell: pwsh
         run: |
           $ws = & wsl.exe wslpath "$env:GITHUB_WORKSPACE"
           & wsl.exe -e bash -lc "cd '$ws' && cp artifacts/pentest-result.json artifacts/raw_report.json"
@@ -509,7 +505,6 @@ jobs:
         env:
           RELEASE_ID: ${{ needs.build-image.outputs.image_digest }}
           RUN_ID: ${{ github.run_id }}
-        shell: pwsh
         run: |
           $ws = & wsl.exe wslpath "$env:GITHUB_WORKSPACE"
           $script = @"
@@ -560,14 +555,12 @@ jobs:
           SG_ARTIFACT_NAME: raw_report.json
           SG_RELEASE_ID: ${{ needs.build-image.outputs.image_digest }}
           SG_SUMMARY_FILE: artifacts/results.json
-        shell: pwsh
         run: |
           $ws = & wsl.exe wslpath "$env:GITHUB_WORKSPACE"
           & wsl.exe -e bash -lc "cd '$ws' && chmod +x .github/scripts/sg-upload.sh && .github/scripts/sg-upload.sh artifacts/raw_report.json 0"
 
       - name: Evaluate Local Pentest Gate
         id: pentest-decision
-        shell: pwsh
         run: |
           $script = @'
           DECISION=$(jq -r '.decision // "UNKNOWN"' /tmp/sg-eval-result 2>/dev/null || echo "UNKNOWN")
@@ -610,7 +603,6 @@ jobs:
 
       - name: Cleanup Local Containers
         if: always()
-        shell: pwsh
         run: |
           $ws = & wsl.exe wslpath "$env:GITHUB_WORKSPACE"
           & wsl.exe -e bash -lc "cd '$ws' && docker compose -f docker-compose.pentest.yml -p local-pentest down -v"
