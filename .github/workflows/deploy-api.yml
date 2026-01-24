@@ -499,32 +499,32 @@ jobs:
           fi
 
           REQUEST_BODY=$(python3 - <<'PY'
-import json, os, sys
-with open("artifacts/openapi.json","r",encoding="utf-8") as f:
-    openapi = json.load(f)
-body = {
-    "target_url": os.environ.get("TARGET_URL",""),
-    "spec": openapi,
-    "release_id": os.environ.get("RELEASE_ID",""),
-    "run_id": os.environ.get("RUN_ID","")
-}
-user = os.environ.get("PENTEST_AUTH_USERNAME","")
-pw = os.environ.get("PENTEST_AUTH_PASSWORD","")
-if user and pw:
-    body["auth_username"] = user
-    body["auth_password"] = pw
-cred = os.environ.get("PENTEST_AUTH_CREDENTIALS_JSON","").strip()
-if cred:
-    try:
-        creds = json.loads(cred)
-        if isinstance(creds, list) and creds:
-            body["auth_credentials"] = creds
-    except Exception:
-        print("PENTEST_AUTH_CREDENTIALS_JSON이 유효한 JSON이 아닙니다.", file=sys.stderr)
-        sys.exit(1)
-print(json.dumps(body))
-PY
-)
+          import json, os, sys
+          with open("artifacts/openapi.json","r",encoding="utf-8") as f:
+              openapi = json.load(f)
+          body = {
+              "target_url": os.environ.get("TARGET_URL",""),
+              "spec": openapi,
+              "release_id": os.environ.get("RELEASE_ID",""),
+              "run_id": os.environ.get("RUN_ID","")
+          }
+          user = os.environ.get("PENTEST_AUTH_USERNAME","")
+          pw = os.environ.get("PENTEST_AUTH_PASSWORD","")
+          if user and pw:
+              body["auth_username"] = user
+              body["auth_password"] = pw
+          cred = os.environ.get("PENTEST_AUTH_CREDENTIALS_JSON","").strip()
+          if cred:
+              try:
+                  creds = json.loads(cred)
+                  if isinstance(creds, list) and creds:
+                      body["auth_credentials"] = creds
+              except Exception:
+                  print("PENTEST_AUTH_CREDENTIALS_JSON이 유효한 JSON이 아닙니다.", file=sys.stderr)
+                  sys.exit(1)
+          print(json.dumps(body))
+          PY
+          )
 
           RESPONSE=$(curl -sS -X POST "${PENTEST_API_URL%/}/api-calls" \
             -H "Content-Type: application/json" \
