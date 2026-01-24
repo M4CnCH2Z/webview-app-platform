@@ -452,7 +452,8 @@ jobs:
           $ws = "/mnt/$drive$rest"
           $script = @"
           mkdir -p artifacts
-          curl -sS '$env:OPENAPI_URL' -o artifacts/openapi.json
+          curl -sS '$env:OPENAPI_URL' -o /tmp/openapi.json
+          cp /tmp/openapi.json artifacts/openapi.json
           "@
           & wsl.exe -e bash -lc "cd '$ws' && $script"
 
