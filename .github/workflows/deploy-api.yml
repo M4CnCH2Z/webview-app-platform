@@ -610,7 +610,7 @@ jobs:
           $drive = $ws.Substring(0,1).ToLower()
           $rest = $ws.Substring(2) -replace '\\','/'
           $ws = "/mnt/$drive$rest"
-          & wsl.exe -e bash -lc "cd '$ws' && chmod +x .github/scripts/sg-upload.sh && .github/scripts/sg-upload.sh artifacts/raw_report.json 0"
+          & wsl.exe -e bash -lc "cd '$ws' && sed -i 's/\r$//' .github/scripts/sg-upload.sh && bash .github/scripts/sg-upload.sh artifacts/raw_report.json 0"
 
       - name: Evaluate Local Pentest Gate
         id: pentest-decision
