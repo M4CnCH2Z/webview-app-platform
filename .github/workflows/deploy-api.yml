@@ -482,24 +482,25 @@ jobs:
           $drive = $ws.Substring(0,1).ToLower()
           $rest = $ws.Substring(2) -replace '\\','/'
           $ws = "/mnt/$drive$rest"
-          $script = @"
-          AUTH_CREDENTIALS_ARG=""
-          if [ -n "$env:PENTEST_AUTH_CREDENTIALS_JSON" ]; then
-            echo "$env:PENTEST_AUTH_CREDENTIALS_JSON" | jq empty || {
-              echo "PENTEST_AUTH_CREDENTIALS_JSON이 유효한 JSON이 아닙니다."
+          $script = @'
+          if [ -n "$PENTEST_AUTH_CREDENTIALS_JSON" ]; then
+            echo "$PENTEST_AUTH_CREDENTIALS_JSON" > /tmp/auth.json
+            jq empty /tmp/auth.json || {
+              echo "PENTEST_AUTH_CREDENTIALS_JSON이 유효한 JSON이 아닙니다." >&2
               exit 1
             }
-            AUTH_CREDENTIALS_ARG="--argjson auth_credentials $env:PENTEST_AUTH_CREDENTIALS_JSON"
+          else
+            echo "[]" > /tmp/auth.json
           fi
 
-          REQUEST_BODY=\$(jq -n \
-            --arg target_url "$env:TARGET_URL" \
-            --arg release_id "$env:RELEASE_ID" \
-            --arg run_id "$env:RUN_ID" \
-            --arg auth_username "$env:PENTEST_AUTH_USERNAME" \
-            --arg auth_password "$env:PENTEST_AUTH_PASSWORD" \
+          REQUEST_BODY=$(jq -n \
+            --arg target_url "$TARGET_URL" \
+            --arg release_id "$RELEASE_ID" \
+            --arg run_id "$RUN_ID" \
+            --arg auth_username "$PENTEST_AUTH_USERNAME" \
+            --arg auth_password "$PENTEST_AUTH_PASSWORD" \
             --argfile openapi artifacts/openapi.json \
-            \$AUTH_CREDENTIALS_ARG \
+            --slurpfile auth_credentials /tmp/auth.json \
             '{
               target_url: $target_url,
               spec: $openapi,
@@ -507,23 +508,26 @@ jobs:
               run_id: $run_id
             }
             + (if $auth_username != "" and $auth_password != "" then {auth_username:$auth_username,auth_password:$auth_password} else {} end)
-            + (if (has("auth_credentials")) then {auth_credentials:$auth_credentials} else {} end)')
+            + (if ($auth_credentials|length)>0 then {auth_credentials:$auth_credentials[0]} else {} end)')
 
-          RESPONSE=\$(curl -sS -X POST "${env:PENTEST_API_URL%/}/api-calls" \
+          RESPONSE=$(curl -sS -X POST "${PENTEST_API_URL%/}/api-calls" \
             -H "Content-Type: application/json" \
-            -d "\$REQUEST_BODY")
+            -d "$REQUEST_BODY")
 
-          echo "\$RESPONSE" > artifacts/pentest-run.json
-          RUN_TOKEN=\$(echo "\$RESPONSE" | jq -r '.run_id // empty')
+          echo "$RESPONSE" > artifacts/pentest-run.json
+          RUN_TOKEN=$(echo "$RESPONSE" | jq -r '.run_id // empty')
 
-          if [ -z "\$RUN_TOKEN" ]; then
-            echo "펜테스트 실행 요청 실패:"
-            echo "\$RESPONSE"
+          if [ -z "$RUN_TOKEN" ]; then
+            echo "펜테스트 실행 요청 실패:" >&2
+            echo "$RESPONSE" >&2
             exit 1
           fi
-          echo "\$RUN_TOKEN"
-          "@
-          $runToken = & wsl.exe -e bash -lc "cd '$ws' && $script"
+          echo "$RUN_TOKEN"
+          '@
+          $normalized = $script -replace "`r`n", "`n"
+          $bytes = [System.Text.Encoding]::UTF8.GetBytes($normalized)
+          $b64 = [System.Convert]::ToBase64String($bytes)
+          $runToken = & wsl.exe -e bash -lc "cd '$ws' && echo '$b64' | base64 -d > /tmp/pentest-run.sh && TARGET_URL='$env:TARGET_URL' RELEASE_ID='$env:RELEASE_ID' RUN_ID='$env:RUN_ID' PENTEST_API_URL='$env:PENTEST_API_URL' PENTEST_AUTH_USERNAME='$env:PENTEST_AUTH_USERNAME' PENTEST_AUTH_PASSWORD='$env:PENTEST_AUTH_PASSWORD' PENTEST_AUTH_CREDENTIALS_JSON='$env:PENTEST_AUTH_CREDENTIALS_JSON' bash /tmp/pentest-run.sh"
           "RUN_TOKEN=$runToken" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Wait for Pentest Result
@@ -534,26 +538,29 @@ jobs:
           $drive = $ws.Substring(0,1).ToLower()
           $rest = $ws.Substring(2) -replace '\\','/'
           $ws = "/mnt/$drive$rest"
-          $script = @"
-          for i in \$(seq 1 30); do
-            RESULT=\$(curl -sS -X GET "${env:PENTEST_API_URL%/}/api-calls/$env:RUN_TOKEN")
-            STATUS=\$(echo "\$RESULT" | jq -r '.status // "unknown"')
+          $script = @'
+          for i in $(seq 1 30); do
+            RESULT=$(curl -sS -X GET "${PENTEST_API_URL%/}/api-calls/$RUN_TOKEN")
+            STATUS=$(echo "$RESULT" | jq -r '.status // "unknown"')
 
-            if [ "\$STATUS" = "done" ] || [ "\$STATUS" = "failed" ]; then
-              echo "\$RESULT" > artifacts/pentest-result.json
+            if [ "$STATUS" = "done" ] || [ "$STATUS" = "failed" ]; then
+              echo "$RESULT" > artifacts/pentest-result.json
               break
             fi
 
-            echo "펜테스트 진행 중... (\$i/30) - \$STATUS"
+            echo "펜테스트 진행 중... ($i/30) - $STATUS"
             sleep 10
           done
 
           if [ ! -f artifacts/pentest-result.json ]; then
-            echo "펜테스트 결과 타임아웃"
+            echo "펜테스트 결과 타임아웃" >&2
             exit 1
           fi
-          "@
-          & wsl.exe -e bash -lc "cd '$ws' && $script"
+          '@
+          $normalized = $script -replace "`r`n", "`n"
+          $bytes = [System.Text.Encoding]::UTF8.GetBytes($normalized)
+          $b64 = [System.Convert]::ToBase64String($bytes)
+          & wsl.exe -e bash -lc "cd '$ws' && echo '$b64' | base64 -d > /tmp/pentest-wait.sh && PENTEST_API_URL='$env:PENTEST_API_URL' RUN_TOKEN='$env:RUN_TOKEN' bash /tmp/pentest-wait.sh"
 
       - name: Download Pentest Report
         run: |
