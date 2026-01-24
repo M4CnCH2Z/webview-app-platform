@@ -563,47 +563,37 @@ jobs:
           RELEASE_ID: ${{ needs.build-image.outputs.image_digest }}
           RUN_ID: ${{ github.run_id }}
         run: |
-          $ws = $env:GITHUB_WORKSPACE
-          $drive = $ws.Substring(0,1).ToLower()
-          $rest = $ws.Substring(2) -replace '\\','/'
-          $ws = "/mnt/$drive$rest"
-          $script = @"
-          RAW_REPORT="artifacts/raw_report.json"
-          if [ ! -f "\$RAW_REPORT" ]; then
-            echo '{"error":"raw_report.json not found"}' > "\$RAW_REPORT"
-            echo '{"summary":{"tool":"custom-pentest","findings_total":0,"findings_high":0,"findings_medium":0,"findings_low":0},"metadata":{"note":"raw_report.json not found"}}' > artifacts/results.json
+          $artifacts = Join-Path $env:GITHUB_WORKSPACE "artifacts"
+          $rawReport = Join-Path $artifacts "raw_report.json"
+          if (-not (Test-Path $rawReport)) {
+            Set-Content -Path $rawReport -Value '{"error":"raw_report.json not found"}'
+            Set-Content -Path (Join-Path $artifacts "results.json") -Value '{"summary":{"tool":"custom-pentest","findings_total":0,"findings_high":0,"findings_medium":0,"findings_low":0},"metadata":{"note":"raw_report.json not found"}}'
             exit 0
-          fi
+          }
 
-          TOTAL=\$(jq '[.result.findings[]?] | length' "\$RAW_REPORT" 2>/dev/null || echo 0)
-          HIGH=\$(jq '[.result.findings[]? | select(.severity=="HIGH")] | length' "\$RAW_REPORT" 2>/dev/null || echo 0)
-          MEDIUM=\$(jq '[.result.findings[]? | select(.severity=="MEDIUM")] | length' "\$RAW_REPORT" 2>/dev/null || echo 0)
-          LOW=\$(jq '[.result.findings[]? | select(.severity=="LOW")] | length' "\$RAW_REPORT" 2>/dev/null || echo 0)
+          $data = Get-Content -Raw -Path $rawReport | ConvertFrom-Json
+          $findings = @()
+          if ($data.result -and $data.result.findings) { $findings = $data.result.findings }
+          $total = $findings.Count
+          $high = ($findings | Where-Object { $_.severity -eq "HIGH" }).Count
+          $medium = ($findings | Where-Object { $_.severity -eq "MEDIUM" }).Count
+          $low = ($findings | Where-Object { $_.severity -eq "LOW" }).Count
 
-          jq -n \
-            --arg release_id "$env:RELEASE_ID" \
-            --arg run_id "$env:RUN_ID" \
-            --arg report_file "raw_report.json" \
-            --argjson total "\$TOTAL" \
-            --argjson high "\$HIGH" \
-            --argjson medium "\$MEDIUM" \
-            --argjson low "\$LOW" \
-            '{
-              summary: {
-                tool: "custom-pentest",
-                findings_total: $total,
-                findings_high: $high,
-                findings_medium: $medium,
-                findings_low: $low
-              },
-              metadata: {
-                release_id: $release_id,
-                run_id: $run_id,
-                raw_report: $report_file
-              }
-            }' > artifacts/results.json
-          "@
-          & wsl.exe -e bash -lc "cd '$ws' && $script"
+          $summary = @{
+            summary = @{
+              tool = "custom-pentest"
+              findings_total = $total
+              findings_high = $high
+              findings_medium = $medium
+              findings_low = $low
+            }
+            metadata = @{
+              release_id = $env:RELEASE_ID
+              run_id = $env:RUN_ID
+              raw_report = "raw_report.json"
+            }
+          }
+          $summary | ConvertTo-Json -Depth 6 | Set-Content -Path (Join-Path $artifacts "results.json")
 
       - name: Upload Pentest Evidence to Security Gate
         env:
