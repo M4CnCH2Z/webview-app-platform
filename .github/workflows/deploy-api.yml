@@ -450,24 +450,18 @@ jobs:
           $drive = $ws.Substring(0,1).ToLower()
           $rest = $ws.Substring(2) -replace '\\','/'
           $ws = "/mnt/$drive$rest"
-          $script = @"
-          mkdir -p artifacts
-          OPENAPI_URL="$env:OPENAPI_URL"
-          HTTP_CODE=\$(curl -sS -o /tmp/openapi.json -w "%{http_code}" "\$OPENAPI_URL")
-          CURL_STATUS=\$?
-          if [ "\$CURL_STATUS" != "0" ]; then
-            echo "OpenAPI fetch failed (curl exit: \$CURL_STATUS)"
+          $openapiTmp = Join-Path $env:RUNNER_TEMP "openapi.json"
+          $status = & wsl.exe -e bash -lc "curl -sS -o /tmp/openapi.json -w '%{http_code}' '$env:OPENAPI_URL'"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "OpenAPI fetch failed (curl exit: $LASTEXITCODE)"
             exit 1
-          fi
-          echo "OpenAPI HTTP status: \$HTTP_CODE"
-          if [ "\$HTTP_CODE" != "200" ]; then
-            echo "OpenAPI fetch failed, response snippet:"
-            head -c 500 /tmp/openapi.json || true
+          }
+          Write-Host "OpenAPI HTTP status: $status"
+          if ($status -ne "200") {
+            & wsl.exe -e bash -lc "head -c 500 /tmp/openapi.json || true"
             exit 1
-          fi
-          cp /tmp/openapi.json artifacts/openapi.json
-          "@
-          & wsl.exe -e bash -lc "cd '$ws' && $script"
+          }
+          & wsl.exe -e bash -lc "cp /tmp/openapi.json '/mnt/$drive$($rest)/artifacts/openapi.json'"
 
       - name: Request Pentest Run
         env:
