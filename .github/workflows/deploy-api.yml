@@ -461,7 +461,7 @@ jobs:
             & wsl.exe -e bash -lc "head -c 500 /tmp/openapi.json || true"
             exit 1
           }
-          & wsl.exe -e bash -lc "cp /tmp/openapi.json '/mnt/$drive$($rest)/artifacts/openapi.json'"
+          & wsl.exe -e bash -lc "mkdir -p '/mnt/$drive$($rest)/artifacts' && cp /tmp/openapi.json '/mnt/$drive$($rest)/artifacts/openapi.json'"
 
       - name: Request Pentest Run
         env:
