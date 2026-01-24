@@ -444,7 +444,7 @@ jobs:
 
       - name: Fetch OpenAPI JSON
         env:
-          OPENAPI_URL: http://api:8080/v3/api-docs
+          OPENAPI_URL: http://host.docker.internal:8080/v3/api-docs
         run: |
           $ws = $env:GITHUB_WORKSPACE
           $drive = $ws.Substring(0,1).ToLower()
@@ -462,7 +462,7 @@ jobs:
           PENTEST_AUTH_USERNAME: ${{ secrets.PENTEST_AUTH_USERNAME }}
           PENTEST_AUTH_PASSWORD: ${{ secrets.PENTEST_AUTH_PASSWORD }}
           PENTEST_AUTH_CREDENTIALS_JSON: ${{ secrets.PENTEST_AUTH_CREDENTIALS_JSON }}
-          TARGET_URL: http://api:8080
+          TARGET_URL: http://host.docker.internal:8080
           RELEASE_ID: ${{ needs.build-image.outputs.image_digest }}
           RUN_ID: ${{ github.run_id }}
         run: |
