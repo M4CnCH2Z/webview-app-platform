@@ -446,22 +446,19 @@ jobs:
         env:
           OPENAPI_URL: http://host.docker.internal:8080/v3/api-docs
         run: |
-          $ws = $env:GITHUB_WORKSPACE
-          $drive = $ws.Substring(0,1).ToLower()
-          $rest = $ws.Substring(2) -replace '\\','/'
-          $ws = "/mnt/$drive$rest"
-          $openapiTmp = Join-Path $env:RUNNER_TEMP "openapi.json"
-          $status = & wsl.exe -e bash -lc "curl -sS -o /tmp/openapi.json -w '%{http_code}' '$env:OPENAPI_URL'"
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "OpenAPI fetch failed (curl exit: $LASTEXITCODE)"
+          $artifacts = Join-Path $env:GITHUB_WORKSPACE "artifacts"
+          New-Item -ItemType Directory -Force -Path $artifacts | Out-Null
+          try {
+            Invoke-WebRequest -Uri $env:OPENAPI_URL -OutFile (Join-Path $artifacts "openapi.json") -UseBasicParsing
+          } catch {
+            Write-Host "OpenAPI fetch failed: $($_.Exception.Message)"
+            if ($_.Exception.Response -and $_.Exception.Response.GetResponseStream()) {
+              $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+              $body = $reader.ReadToEnd()
+              Write-Host "Response snippet:`n$($body.Substring(0, [Math]::Min(500, $body.Length)))"
+            }
             exit 1
           }
-          Write-Host "OpenAPI HTTP status: $status"
-          if ($status -ne "200") {
-            & wsl.exe -e bash -lc "head -c 500 /tmp/openapi.json || true"
-            exit 1
-          }
-          & wsl.exe -e bash -lc "mkdir -p '/mnt/$drive$($rest)/artifacts' && cp /tmp/openapi.json '/mnt/$drive$($rest)/artifacts/openapi.json'"
 
       - name: Request Pentest Run
         env:
@@ -478,112 +475,80 @@ jobs:
             exit 1
           }
 
-          $ws = $env:GITHUB_WORKSPACE
-          $drive = $ws.Substring(0,1).ToLower()
-          $rest = $ws.Substring(2) -replace '\\','/'
-          $ws = "/mnt/$drive$rest"
-          $script = @'
-          if [ -n "$PENTEST_AUTH_CREDENTIALS_JSON" ]; then
-            echo "$PENTEST_AUTH_CREDENTIALS_JSON" > /tmp/auth.json
-            jq empty /tmp/auth.json || {
-              echo "PENTEST_AUTH_CREDENTIALS_JSON이 유효한 JSON이 아닙니다." >&2
+          $artifacts = Join-Path $env:GITHUB_WORKSPACE "artifacts"
+          $openapiPath = Join-Path $artifacts "openapi.json"
+          if (-not (Test-Path $openapiPath)) {
+            Write-Host "openapi.json이 없습니다: $openapiPath"
+            exit 1
+          }
+
+          $openapi = Get-Content -Raw -Path $openapiPath | ConvertFrom-Json
+          $body = @{
+            target_url = $env:TARGET_URL
+            spec = $openapi
+            release_id = $env:RELEASE_ID
+            run_id = $env:RUN_ID
+          }
+          if ($env:PENTEST_AUTH_USERNAME -and $env:PENTEST_AUTH_PASSWORD) {
+            $body.auth_username = $env:PENTEST_AUTH_USERNAME
+            $body.auth_password = $env:PENTEST_AUTH_PASSWORD
+          }
+          if ($env:PENTEST_AUTH_CREDENTIALS_JSON) {
+            try {
+              $creds = $env:PENTEST_AUTH_CREDENTIALS_JSON | ConvertFrom-Json
+              if ($creds) { $body.auth_credentials = $creds }
+            } catch {
+              Write-Host "PENTEST_AUTH_CREDENTIALS_JSON이 유효한 JSON이 아닙니다."
               exit 1
             }
-          else
-            echo "[]" > /tmp/auth.json
-          fi
-
-          if ! command -v python3 >/dev/null 2>&1; then
-            echo "python3가 필요합니다." >&2
-            exit 1
-          fi
-
-          REQUEST_BODY=$(python3 - <<'PY'
-          import json, os, sys
-          with open("artifacts/openapi.json","r",encoding="utf-8") as f:
-              openapi = json.load(f)
-          body = {
-              "target_url": os.environ.get("TARGET_URL",""),
-              "spec": openapi,
-              "release_id": os.environ.get("RELEASE_ID",""),
-              "run_id": os.environ.get("RUN_ID","")
           }
-          user = os.environ.get("PENTEST_AUTH_USERNAME","")
-          pw = os.environ.get("PENTEST_AUTH_PASSWORD","")
-          if user and pw:
-              body["auth_username"] = user
-              body["auth_password"] = pw
-          cred = os.environ.get("PENTEST_AUTH_CREDENTIALS_JSON","").strip()
-          if cred:
-              try:
-                  creds = json.loads(cred)
-                  if isinstance(creds, list) and creds:
-                      body["auth_credentials"] = creds
-              except Exception:
-                  print("PENTEST_AUTH_CREDENTIALS_JSON이 유효한 JSON이 아닙니다.", file=sys.stderr)
-                  sys.exit(1)
-          print(json.dumps(body))
-          PY
-          )
 
-          RESPONSE=$(curl -sS -X POST "${PENTEST_API_URL%/}/api-calls" \
-            -H "Content-Type: application/json" \
-            -d "$REQUEST_BODY")
-
-          echo "$RESPONSE" > artifacts/pentest-run.json
-          RUN_TOKEN=$(echo "$RESPONSE" | python3 -c 'import sys,json; print(json.loads(sys.stdin.read()).get("run_id",""))')
-
-          if [ -z "$RUN_TOKEN" ]; then
-            echo "펜테스트 실행 요청 실패:" >&2
-            echo "$RESPONSE" >&2
+          $json = $body | ConvertTo-Json -Depth 50
+          try {
+            $response = Invoke-RestMethod -Method Post -Uri "$($env:PENTEST_API_URL.TrimEnd('/'))/api-calls" -ContentType "application/json" -Body $json
+          } catch {
+            Write-Host "펜테스트 실행 요청 실패: $($_.Exception.Message)"
             exit 1
-          fi
-          echo "$RUN_TOKEN"
-          '@
-          $normalized = $script -replace "`r`n", "`n"
-          $bytes = [System.Text.Encoding]::UTF8.GetBytes($normalized)
-          $b64 = [System.Convert]::ToBase64String($bytes)
-          $runToken = & wsl.exe -e bash -lc "cd '$ws' && echo '$b64' | base64 -d > /tmp/pentest-run.sh && TARGET_URL='$env:TARGET_URL' RELEASE_ID='$env:RELEASE_ID' RUN_ID='$env:RUN_ID' PENTEST_API_URL='$env:PENTEST_API_URL' PENTEST_AUTH_USERNAME='$env:PENTEST_AUTH_USERNAME' PENTEST_AUTH_PASSWORD='$env:PENTEST_AUTH_PASSWORD' PENTEST_AUTH_CREDENTIALS_JSON='$env:PENTEST_AUTH_CREDENTIALS_JSON' bash /tmp/pentest-run.sh"
+          }
+
+          $response | ConvertTo-Json -Depth 10 | Set-Content -Path (Join-Path $artifacts "pentest-run.json")
+          $runToken = $response.run_id
           "RUN_TOKEN=$runToken" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Wait for Pentest Result
         env:
           PENTEST_API_URL: ${{ secrets.PENTEST_API_URL }}
         run: |
-          $ws = $env:GITHUB_WORKSPACE
-          $drive = $ws.Substring(0,1).ToLower()
-          $rest = $ws.Substring(2) -replace '\\','/'
-          $ws = "/mnt/$drive$rest"
-          $script = @'
-          if ! command -v python3 >/dev/null 2>&1; then
-            echo "python3가 필요합니다." >&2
+          if (-not $env:RUN_TOKEN) {
+            Write-Host "RUN_TOKEN이 없습니다."
             exit 1
-          fi
+          }
 
-          for i in $(seq 1 30); do
-            RESULT=$(curl -sS -X GET "${PENTEST_API_URL%/}/api-calls/$RUN_TOKEN")
-            STATUS=$(echo "$RESULT" | python3 -c 'import sys,json; print(json.loads(sys.stdin.read()).get("status","unknown"))')
+          $artifacts = Join-Path $env:GITHUB_WORKSPACE "artifacts"
+          New-Item -ItemType Directory -Force -Path $artifacts | Out-Null
 
-            if [ "$STATUS" = "done" ] || [ "$STATUS" = "failed" ]; then
-              echo "$RESULT" > artifacts/pentest-result.json
+          for ($i = 1; $i -le 30; $i++) {
+            try {
+              $result = Invoke-RestMethod -Method Get -Uri "$($env:PENTEST_API_URL.TrimEnd('/'))/api-calls/$($env:RUN_TOKEN)"
+            } catch {
+              Write-Host "상태 조회 실패: $($_.Exception.Message)"
+              Start-Sleep -Seconds 10
+              continue
+            }
+
+            $status = $result.status
+            Write-Host "펜테스트 진행 중... ($i/30) - $status"
+            if ($status -eq "done" -or $status -eq "failed") {
+              $result | ConvertTo-Json -Depth 10 | Set-Content -Path (Join-Path $artifacts "pentest-result.json")
               break
-            fi
+            }
+            Start-Sleep -Seconds 10
+          }
 
-            echo "펜테스트 진행 중... ($i/30) - $STATUS"
-            sleep 10
-          done
-
-          if [ ! -f artifacts/pentest-result.json ]; then
-            echo "펜테스트 결과 타임아웃" >&2
+          if (-not (Test-Path (Join-Path $artifacts "pentest-result.json"))) {
+            Write-Host "펜테스트 결과 타임아웃"
             exit 1
-          fi
-          '@
-          $normalized = $script -replace "`r`n", "`n"
-          $scriptPath = Join-Path $env:GITHUB_WORKSPACE "artifacts\pentest-wait.sh"
-          New-Item -ItemType Directory -Force -Path (Split-Path $scriptPath) | Out-Null
-          $enc = New-Object System.Text.UTF8Encoding($false)
-          [System.IO.File]::WriteAllText($scriptPath, $normalized, $enc)
-          & wsl.exe -e bash -lc "PENTEST_API_URL='$env:PENTEST_API_URL' RUN_TOKEN='$env:RUN_TOKEN' bash '$ws/artifacts/pentest-wait.sh'"
+          }
 
       - name: Download Pentest Report
         run: |
