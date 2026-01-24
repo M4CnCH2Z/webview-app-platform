@@ -452,7 +452,13 @@ jobs:
           $ws = "/mnt/$drive$rest"
           $script = @"
           mkdir -p artifacts
-          HTTP_CODE=\$(curl -sS -o /tmp/openapi.json -w "%{http_code}" '$env:OPENAPI_URL' || true)
+          OPENAPI_URL="$env:OPENAPI_URL"
+          HTTP_CODE=\$(curl -sS -o /tmp/openapi.json -w "%{http_code}" "\$OPENAPI_URL")
+          CURL_STATUS=\$?
+          if [ "\$CURL_STATUS" != "0" ]; then
+            echo "OpenAPI fetch failed (curl exit: \$CURL_STATUS)"
+            exit 1
+          fi
           echo "OpenAPI HTTP status: \$HTTP_CODE"
           if [ "\$HTTP_CODE" != "200" ]; then
             echo "OpenAPI fetch failed, response snippet:"
