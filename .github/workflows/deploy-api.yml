@@ -471,14 +471,14 @@ jobs:
           RUN_ID: ${{ github.run_id }}
         run: |
           if (-not $env:PENTEST_API_URL) {
-            Write-Host "PENTEST_API_URL이 설정되지 않았습니다."
+            Write-Host "PENTEST_API_URL is not set."
             exit 1
           }
 
           $artifacts = Join-Path $env:GITHUB_WORKSPACE "artifacts"
           $openapiPath = Join-Path $artifacts "openapi.json"
           if (-not (Test-Path $openapiPath)) {
-            Write-Host "openapi.json이 없습니다: $openapiPath"
+            Write-Host "openapi.json not found: $openapiPath"
             exit 1
           }
 
@@ -498,7 +498,7 @@ jobs:
               $creds = $env:PENTEST_AUTH_CREDENTIALS_JSON | ConvertFrom-Json
               if ($creds) { $body.auth_credentials = $creds }
             } catch {
-              Write-Host "PENTEST_AUTH_CREDENTIALS_JSON이 유효한 JSON이 아닙니다."
+              Write-Host "PENTEST_AUTH_CREDENTIALS_JSON is invalid JSON."
               exit 1
             }
           }
@@ -507,7 +507,7 @@ jobs:
           try {
             $response = Invoke-RestMethod -Method Post -Uri "$($env:PENTEST_API_URL.TrimEnd('/'))/api-calls" -ContentType "application/json" -Body $json
           } catch {
-            Write-Host "펜테스트 실행 요청 실패: $($_.Exception.Message)"
+            Write-Host "Pentest request failed: $($_.Exception.Message)"
             exit 1
           }
 
@@ -520,7 +520,7 @@ jobs:
           PENTEST_API_URL: ${{ secrets.PENTEST_API_URL }}
         run: |
           if (-not $env:RUN_TOKEN) {
-            Write-Host "RUN_TOKEN이 없습니다."
+            Write-Host "RUN_TOKEN is missing."
             exit 1
           }
 
@@ -531,13 +531,13 @@ jobs:
             try {
               $result = Invoke-RestMethod -Method Get -Uri "$($env:PENTEST_API_URL.TrimEnd('/'))/api-calls/$($env:RUN_TOKEN)"
             } catch {
-              Write-Host "상태 조회 실패: $($_.Exception.Message)"
+              Write-Host "Status check failed: $($_.Exception.Message)"
               Start-Sleep -Seconds 10
               continue
             }
 
             $status = $result.status
-            Write-Host "펜테스트 진행 중... ($i/30) - $status"
+            Write-Host "Pentest running... ($i/30) - $status"
             if ($status -eq "done" -or $status -eq "failed") {
               $result | ConvertTo-Json -Depth 10 | Set-Content -Path (Join-Path $artifacts "pentest-result.json")
               break
@@ -546,7 +546,7 @@ jobs:
           }
 
           if (-not (Test-Path (Join-Path $artifacts "pentest-result.json"))) {
-            Write-Host "펜테스트 결과 타임아웃"
+            Write-Host "Pentest result timeout."
             exit 1
           }
 
