@@ -579,9 +579,10 @@ jobs:
           fi
           '@
           $normalized = $script -replace "`r`n", "`n"
-          $bytes = [System.Text.Encoding]::UTF8.GetBytes($normalized)
-          $b64 = [System.Convert]::ToBase64String($bytes)
-          & wsl.exe -e bash -lc "cd '$ws' && printf '%s' '$b64' | base64 -d > /tmp/pentest-wait.sh && PENTEST_API_URL='$env:PENTEST_API_URL' RUN_TOKEN='$env:RUN_TOKEN' bash /tmp/pentest-wait.sh"
+          $scriptPath = Join-Path $env:GITHUB_WORKSPACE "artifacts\pentest-wait.sh"
+          New-Item -ItemType Directory -Force -Path (Split-Path $scriptPath) | Out-Null
+          [System.IO.File]::WriteAllText($scriptPath, $normalized)
+          & wsl.exe -e bash -lc "PENTEST_API_URL='$env:PENTEST_API_URL' RUN_TOKEN='$env:RUN_TOKEN' bash '$ws/artifacts/pentest-wait.sh'"
 
       - name: Download Pentest Report
         run: |
