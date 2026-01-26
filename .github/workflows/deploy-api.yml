@@ -364,6 +364,7 @@ jobs:
 
   local-pentest:
     runs-on: [self-hosted]
+    environment: staging
     defaults:
       run:
         shell: powershell
@@ -665,7 +666,7 @@ jobs:
           $rest = $ws.Substring(2) -replace '\\','/'
           $ws = "/mnt/$drive$rest"
           & wsl.exe -e bash -lc "cd '$ws' && tr -d '\r' < artifacts/results.json > /tmp/sg-results.json && od -An -t x1 -N 16 /tmp/sg-results.json"
-          & wsl.exe -e bash -lc "cd '$ws' && sed -i 's/\r$//' .github/scripts/sg-upload.sh && SG_ENV='$env:SG_ENV' SG_GATE='$env:SG_GATE' SG_EVIDENCE_TYPE='$env:SG_EVIDENCE_TYPE' SG_ARTIFACT_NAME='$env:SG_ARTIFACT_NAME' SG_RELEASE_ID='$env:SG_RELEASE_ID' SG_SUMMARY_FILE='/tmp/sg-results.json' bash .github/scripts/sg-upload.sh artifacts/raw_report.json 0"
+          & wsl.exe -e bash -lc "cd '$ws' && sed -i 's/\r$//' .github/scripts/sg-upload.sh && SG_API_URL='$env:SECURITY_GATE_URL' SG_API_SECRET='$env:SECURITY_GATE_HMAC_SECRET' SG_ENV='$env:SG_ENV' SG_GATE='$env:SG_GATE' SG_EVIDENCE_TYPE='$env:SG_EVIDENCE_TYPE' SG_ARTIFACT_NAME='$env:SG_ARTIFACT_NAME' SG_RELEASE_ID='$env:SG_RELEASE_ID' SG_SUMMARY_FILE='/tmp/sg-results.json' bash .github/scripts/sg-upload.sh artifacts/raw_report.json 0"
 
       - name: Evaluate Local Pentest Gate
         id: pentest-decision
