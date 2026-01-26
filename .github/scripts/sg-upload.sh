@@ -113,12 +113,26 @@ echo "📄 요약 입력 파일 내용 (첫 500자): $SUMMARY_SOURCE"
 head -c 500 "$SUMMARY_SOURCE"
 echo ""
 
-# JSON 유효성 검사
+# JSON 유효성 검사 (jq 우선, 실패 시 python3로 재검증)
 if ! jq empty "$SUMMARY_SOURCE" 2>/dev/null; then
-  echo "Invalid JSON in $SUMMARY_SOURCE"
-  exit 1
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - <<PY
+import json, sys
+with open("$SUMMARY_SOURCE","rb") as f:
+    json.loads(f.read().decode("utf-8"))
+PY
+    if [ $? -ne 0 ]; then
+      echo "Invalid JSON in $SUMMARY_SOURCE"
+      exit 1
+    fi
+    echo "JSON 유효성 검사 통과 (python3)"
+  else
+    echo "Invalid JSON in $SUMMARY_SOURCE"
+    exit 1
+  fi
+else
+  echo "JSON 유효성 검사 통과 (jq)"
 fi
-echo "JSON 유효성 검사 통과"
 
 # ---------------------------------------------------------
 # STEP 1: Presign
