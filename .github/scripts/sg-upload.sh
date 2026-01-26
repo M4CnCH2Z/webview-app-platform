@@ -19,6 +19,18 @@ SG_EVIDENCE_TYPE="${SG_EVIDENCE_TYPE:-SAST}"
 SG_ARTIFACT_NAME="${SG_ARTIFACT_NAME:-report.json}"
 SG_RELEASE_ID="${SG_RELEASE_ID:-}"
 SG_SUMMARY_FILE="${SG_SUMMARY_FILE:-}"
+SG_RUN_ID="${SG_RUN_ID:-${GITHUB_RUN_ID:-}}"
+SG_EXECUTION_ENV="${SG_EXECUTION_ENV:-}"
+SG_TARGET_URL="${SG_TARGET_URL:-}"
+SG_SPEC_HASH="${SG_SPEC_HASH:-}"
+SG_COMPOSE_HASH="${SG_COMPOSE_HASH:-}"
+SG_ENV_HASH="${SG_ENV_HASH:-}"
+SG_LIMITS_RPS="${SG_LIMITS_RPS:-}"
+SG_LIMITS_CONCURRENCY="${SG_LIMITS_CONCURRENCY:-}"
+SG_LIMITS_MAX_REQUESTS="${SG_LIMITS_MAX_REQUESTS:-}"
+SG_LIMITS_TIMEOUT="${SG_LIMITS_TIMEOUT:-}"
+SG_TOOL_NAME="${SG_TOOL_NAME:-}"
+SG_TOOL_VERSION="${SG_TOOL_VERSION:-}"
 SG_DEBUG_PAYLOAD_PATH="${SG_DEBUG_PAYLOAD_PATH:-}"
 
 if [ -z "$SG_API_URL" ] || [ -z "$SG_API_SECRET" ]; then
@@ -91,6 +103,29 @@ with open("$file","rb") as f:
     obj = json.loads(f.read().decode("utf-8"))
 summary = obj.get("summary", obj)
 print(json.dumps(summary, separators=(",",":")))
+PY
+}
+
+json_results_summary_from_file() {
+  local file="$1"
+  python3 - <<PY
+import json, sys
+with open("$file","rb") as f:
+    obj = json.loads(f.read().decode("utf-8"))
+summary = obj.get("summary", obj)
+def to_int(v):
+    try:
+        return int(v)
+    except Exception:
+        return 0
+rs = {
+  "critical": to_int(summary.get("findings_critical", 0)),
+  "high": to_int(summary.get("findings_high", 0)),
+  "medium": to_int(summary.get("findings_medium", 0)),
+  "low": to_int(summary.get("findings_low", 0)),
+  "findings": summary.get("findings", [])
+}
+print(json.dumps(rs, separators=(",",":")))
 PY
 }
 
@@ -243,6 +278,7 @@ echo "SG에 최종 요약본(Summary) 보고 중..."
 
 # Summary 추출 및 검증
 SUMMARY=$(json_summary_from_file "$SUMMARY_SOURCE")
+RESULTS_SUMMARY=$(json_results_summary_from_file "$SUMMARY_SOURCE")
 
 if [ -z "$SUMMARY" ] || [ "$SUMMARY" == "null" ]; then
   echo "summary 필드 없음, 기본값 사용"
@@ -253,10 +289,17 @@ echo "Summary 값: $SUMMARY"
 
 # Complete 요청 페이로드 (한 줄로 - 서명 계산 시 일관성 유지)
 ISSUED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-COMPLETE_PAYLOAD=$(cat <<EOF
+if [ "$SG_EVIDENCE_TYPE" = "LOCAL_PENTEST" ]; then
+  COMPLETE_PAYLOAD=$(cat <<EOF
+{"evidence_id":"$EVIDENCE_ID","release_id":"$RELEASE_ID","env":"$SG_ENV","gate":"$SG_GATE","evidence_type":"$SG_EVIDENCE_TYPE","s3_key":"$S3_KEY","sha256":"$FILE_SHA","size":$FILE_SIZE,"issued_at":"$ISSUED_AT","parser_version":"1.0.0","run_id":"$SG_RUN_ID","execution_env":"$SG_EXECUTION_ENV","target_profile":{"target_url":"$SG_TARGET_URL","spec_hash":"$SG_SPEC_HASH","compose_hash":"$SG_COMPOSE_HASH","env_hash":"$SG_ENV_HASH"},"limits":{"rps":${SG_LIMITS_RPS:-0},"concurrency":${SG_LIMITS_CONCURRENCY:-0},"max_requests":${SG_LIMITS_MAX_REQUESTS:-0},"timeout":${SG_LIMITS_TIMEOUT:-0}},"tool_list":[{"name":"$SG_TOOL_NAME","version":"$SG_TOOL_VERSION"}],"results_summary":$RESULTS_SUMMARY,"producer":{"repo":"${GITHUB_REPOSITORY:-unknown}","workflow":"${GITHUB_WORKFLOW:-unknown}","job":"${GITHUB_JOB:-unknown}","run_id":"${GITHUB_RUN_ID:-0}","attempt":${GITHUB_RUN_ATTEMPT:-1},"actor":"${GITHUB_ACTOR:-unknown}"},"commit_sha":"$COMMIT_SHA","pr_number":$PR_NUMBER}
+EOF
+)
+else
+  COMPLETE_PAYLOAD=$(cat <<EOF
 {"evidence_id":"$EVIDENCE_ID","release_id":"$RELEASE_ID","env":"$SG_ENV","gate":"$SG_GATE","evidence_type":"$SG_EVIDENCE_TYPE","s3_key":"$S3_KEY","sha256":"$FILE_SHA","size":$FILE_SIZE,"issued_at":"$ISSUED_AT","parser_version":"1.0.0","summary":$SUMMARY,"producer":{"repo":"${GITHUB_REPOSITORY:-unknown}","workflow":"${GITHUB_WORKFLOW:-unknown}","job":"${GITHUB_JOB:-unknown}","run_id":"${GITHUB_RUN_ID:-0}","attempt":${GITHUB_RUN_ATTEMPT:-1},"actor":"${GITHUB_ACTOR:-unknown}"},"commit_sha":"$COMMIT_SHA","pr_number":$PR_NUMBER}
 EOF
 )
+fi
 
 echo "Complete 요청 페이로드:"
 echo "$COMPLETE_PAYLOAD" | json_pretty

@@ -661,13 +661,22 @@ jobs:
           SG_RELEASE_ID: ${{ needs.build-image.outputs.image_digest }}
           SG_SUMMARY_FILE: artifacts/results.json
           SG_DEBUG_PAYLOAD_PATH: artifacts/sg-presign-payload.json
+          SG_RUN_ID: ${{ github.run_id }}
+          SG_EXECUTION_ENV: local-docker
+          SG_TARGET_URL: http://host.docker.internal:8080
+          SG_TOOL_NAME: custom-pentest
+          SG_TOOL_VERSION: "1.0.0"
+          SG_LIMITS_RPS: "50"
+          SG_LIMITS_CONCURRENCY: "10"
+          SG_LIMITS_MAX_REQUESTS: "1000"
+          SG_LIMITS_TIMEOUT: "300"
         run: |
           $ws = $env:GITHUB_WORKSPACE
           $drive = $ws.Substring(0,1).ToLower()
           $rest = $ws.Substring(2) -replace '\\','/'
           $ws = "/mnt/$drive$rest"
           & wsl.exe -e bash -lc "cd '$ws' && tr -d '\r' < artifacts/results.json > /tmp/sg-results.json && od -An -t x1 -N 16 /tmp/sg-results.json"
-          & wsl.exe -e bash -lc "cd '$ws' && sed -i 's/\r$//' .github/scripts/sg-upload.sh && SG_API_URL='$env:SECURITY_GATE_URL' SG_API_SECRET='$env:SECURITY_GATE_HMAC_SECRET' SG_ENV='$env:SG_ENV' SG_GATE='$env:SG_GATE' SG_EVIDENCE_TYPE='$env:SG_EVIDENCE_TYPE' SG_ARTIFACT_NAME='$env:SG_ARTIFACT_NAME' SG_RELEASE_ID='$env:SG_RELEASE_ID' SG_SUMMARY_FILE='/tmp/sg-results.json' bash .github/scripts/sg-upload.sh artifacts/raw_report.json 0"
+          & wsl.exe -e bash -lc "cd '$ws' && SPEC_HASH=\$(sha256sum artifacts/openapi.json | awk '{print \$1}') && COMPOSE_HASH=\$(sha256sum docker-compose.pentest.yml | awk '{print \$1}') && sed -i 's/\r$//' .github/scripts/sg-upload.sh && SG_API_URL='$env:SECURITY_GATE_URL' SG_API_SECRET='$env:SECURITY_GATE_HMAC_SECRET' SG_ENV='$env:SG_ENV' SG_GATE='$env:SG_GATE' SG_EVIDENCE_TYPE='$env:SG_EVIDENCE_TYPE' SG_ARTIFACT_NAME='$env:SG_ARTIFACT_NAME' SG_RELEASE_ID='$env:SG_RELEASE_ID' SG_SUMMARY_FILE='/tmp/sg-results.json' SG_RUN_ID='$env:SG_RUN_ID' SG_EXECUTION_ENV='$env:SG_EXECUTION_ENV' SG_TARGET_URL='$env:SG_TARGET_URL' SG_SPEC_HASH=\"\$SPEC_HASH\" SG_COMPOSE_HASH=\"\$COMPOSE_HASH\" SG_ENV_HASH='' SG_LIMITS_RPS='$env:SG_LIMITS_RPS' SG_LIMITS_CONCURRENCY='$env:SG_LIMITS_CONCURRENCY' SG_LIMITS_MAX_REQUESTS='$env:SG_LIMITS_MAX_REQUESTS' SG_LIMITS_TIMEOUT='$env:SG_LIMITS_TIMEOUT' SG_TOOL_NAME='$env:SG_TOOL_NAME' SG_TOOL_VERSION='$env:SG_TOOL_VERSION' bash .github/scripts/sg-upload.sh artifacts/raw_report.json 0"
 
       - name: Evaluate Local Pentest Gate
         id: pentest-decision
