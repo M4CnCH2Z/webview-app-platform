@@ -683,34 +683,32 @@ jobs:
       - name: Evaluate Local Pentest Gate
         id: pentest-decision
         run: |
-          $script = @'
-          DECISION=$(jq -r '.decision // "UNKNOWN"' /tmp/sg-eval-result 2>/dev/null || echo "UNKNOWN")
-          DECISION_ID=$(jq -r '.decision_id // ""' /tmp/sg-eval-result 2>/dev/null || echo "")
-          REASONS=$(jq -c '.reasons // []' /tmp/sg-eval-result 2>/dev/null || echo "[]")
-
-          echo "Decision: $DECISION"
-
-          if [ "$DECISION" == "PASS" ]; then
-            GATE_PASSED="true"
-          else
-            GATE_PASSED="false"
-            echo "Gate 실패 사유:"
-            echo "$REASONS" | jq '.'
-          fi
-
-          echo "decision=$DECISION" >> $GITHUB_OUTPUT
-          echo "decision_id=$DECISION_ID" >> $GITHUB_OUTPUT
-          echo "passed=$GATE_PASSED" >> $GITHUB_OUTPUT
-
-          if [ "$GATE_PASSED" != "true" ]; then
-            exit 1
-          fi
-          '@
           $ws = $env:GITHUB_WORKSPACE
           $drive = $ws.Substring(0,1).ToLower()
           $rest = $ws.Substring(2) -replace '\\','/'
           $ws = "/mnt/$drive$rest"
-          & wsl.exe -e bash -lc "cd '$ws' && $script"
+          $evalPath = Join-Path $env:GITHUB_WORKSPACE "sg-eval-result.json"
+          & wsl.exe -e bash -lc "cd '$ws' && if [ -f /tmp/sg-eval-result ]; then cp /tmp/sg-eval-result '$ws/sg-eval-result.json'; fi"
+          if (-not (Test-Path $evalPath)) {
+            Write-Host "sg-eval-result.json not found"
+            exit 1
+          }
+          $eval = Get-Content -Raw -Path $evalPath | ConvertFrom-Json
+          $decision = $eval.decision
+          if (-not $decision) { $decision = "UNKNOWN" }
+          $decisionId = $eval.decision_id
+          $reasons = $eval.reasons
+          Write-Host "Decision: $decision"
+          if ($decision -eq "PASS") {
+            $passed = "true"
+          } else {
+            $passed = "false"
+            if ($reasons) { $reasons | ConvertTo-Json -Depth 10 | Write-Host }
+          }
+          "decision=$decision" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "decision_id=$decisionId" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "passed=$passed" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          if ($passed -ne "true") { exit 1 }
 
       - name: Upload Pentest Artifacts
         if: always()
