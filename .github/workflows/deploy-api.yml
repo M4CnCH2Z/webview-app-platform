@@ -636,7 +636,7 @@ jobs:
           $drive = $ws.Substring(0,1).ToLower()
           $rest = $ws.Substring(2) -replace '\\','/'
           $ws = "/mnt/$drive$rest"
-          & wsl.exe -e bash -lc "cd '$ws' && python3 - <<'PY'\nimport json\np='artifacts/results.json'\nwith open(p,'rb') as f:\n    b=f.read()\nprint('WSL first bytes:', ' '.join(f'{x:02X}' for x in b[:16]))\ntry:\n    json.loads(b.decode('utf-8'))\n    print('WSL json.loads OK')\nexcept Exception as e:\n    print('WSL json.loads FAIL:', e)\nPY"
+          & wsl.exe -e bash -lc "cd '$ws' && python3 -c \"import json,sys; p='artifacts/results.json'; b=open(p,'rb').read(); print('WSL first bytes:', ' '.join(f'{x:02X}' for x in b[:16]));\ntry:\n    json.loads(b.decode('utf-8'))\n    print('WSL json.loads OK')\nexcept Exception as e:\n    print('WSL json.loads FAIL:', e)\""
 
       - name: Upload Pentest Evidence to Security Gate
         env:
