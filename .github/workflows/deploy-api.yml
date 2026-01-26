@@ -593,7 +593,9 @@ jobs:
               raw_report = "raw_report.json"
             }
           }
-          $summary | ConvertTo-Json -Depth 6 | Out-File -FilePath (Join-Path $artifacts "results.json") -Encoding utf8NoBOM
+          $jsonOut = $summary | ConvertTo-Json -Depth 6
+          $enc = New-Object System.Text.UTF8Encoding($false)
+          [System.IO.File]::WriteAllText((Join-Path $artifacts "results.json"), $jsonOut, $enc)
 
       - name: Upload Pentest Evidence to Security Gate
         env:
