@@ -20,6 +20,13 @@ SG_ARTIFACT_NAME="${SG_ARTIFACT_NAME:-report.json}"
 SG_RELEASE_ID="${SG_RELEASE_ID:-}"
 SG_SUMMARY_FILE="${SG_SUMMARY_FILE:-}"
 
+if [ -z "$SG_API_URL" ] || [ -z "$SG_API_SECRET" ]; then
+  echo "Error: SG_API_URL 또는 SG_API_SECRET이 설정되지 않았습니다."
+  exit 1
+fi
+
+echo "SG_API_URL: $SG_API_URL"
+
 # 파일의 지문(SHA256) 계산 
 FILE_SHA=$(sha256sum "$REPORT_FILE" 2>/dev/null | cut -d' ' -f1 || shasum -a 256 "$REPORT_FILE" | cut -d' ' -f1)
 
@@ -126,11 +133,17 @@ sg_request() {
   echo "Signature: $signature" >&2
   
   # curl 결과만 stdout으로 반환
-  curl -s -X "$method" "${SG_API_URL}${path}" \
+  local res
+  res=$(curl -sS -X "$method" "${SG_API_URL}${path}" \
     -H "X-SG-Timestamp: $timestamp" \
     -H "X-SG-Signature: $signature" \
     -H "Content-Type: application/json" \
-    -d "$body"
+    -d "$body")
+  local rc=$?
+  if [ $rc -ne 0 ]; then
+    echo "curl failed (exit $rc) for $path" >&2
+  fi
+  echo "$res"
 }
 
 # ---------------------------------------------------------
