@@ -65,28 +65,22 @@ fi
 
 # JSON 유틸리티 (python3)
 json_pretty() {
-  python3 - <<'PY'
-import sys, json
-data = sys.stdin.read()
+  python3 -c 'import sys,json; data=sys.stdin.read(); 
 try:
-    obj = json.loads(data)
+    obj=json.loads(data); 
     print(json.dumps(obj, indent=2, ensure_ascii=False))
 except Exception:
-    print(data)
-PY
+    print(data)' 
 }
 
 json_get_field() {
   local field="$1"
-  python3 - <<PY
-import sys, json
-data = sys.stdin.read()
+  python3 -c 'import sys,json; field=sys.argv[1]; data=sys.stdin.read(); 
 try:
-    obj = json.loads(data)
-    print(obj.get("$field",""))
+    obj=json.loads(data); 
+    print(obj.get(field,""))
 except Exception:
-    print("")
-PY
+    print("")' "$field"
 }
 
 json_summary_from_file() {
