@@ -597,6 +597,27 @@ jobs:
           $enc = New-Object System.Text.UTF8Encoding($false)
           [System.IO.File]::WriteAllText((Join-Path $artifacts "results.json"), $jsonOut, $enc)
 
+      - name: Debug Results JSON
+        run: |
+          $path = Join-Path $env:GITHUB_WORKSPACE "artifacts\results.json"
+          if (-not (Test-Path $path)) {
+            Write-Host "results.json not found: $path"
+            exit 1
+          }
+          $bytes = [System.IO.File]::ReadAllBytes($path)
+          $hex = ($bytes[0..([Math]::Min(15, $bytes.Length-1))] | ForEach-Object { $_.ToString("X2") }) -join " "
+          Write-Host "results.json first bytes: $hex"
+          $text = [System.Text.Encoding]::UTF8.GetString($bytes)
+          Write-Host "results.json first 500 chars:"
+          Write-Host ($text.Substring(0, [Math]::Min(500, $text.Length)))
+          try {
+            $obj = $text | ConvertFrom-Json
+            Write-Host "results.json parsed OK"
+          } catch {
+            Write-Host "results.json parse failed: $($_.Exception.Message)"
+            exit 1
+          }
+
       - name: Upload Pentest Evidence to Security Gate
         env:
           SECURITY_GATE_URL: ${{ secrets.SECURITY_GATE_URL }}
