@@ -593,7 +593,7 @@ jobs:
               raw_report = "raw_report.json"
             }
           }
-          $summary | ConvertTo-Json -Depth 6 | Set-Content -Path (Join-Path $artifacts "results.json")
+          $summary | ConvertTo-Json -Depth 6 | Out-File -FilePath (Join-Path $artifacts "results.json") -Encoding utf8
 
       - name: Upload Pentest Evidence to Security Gate
         env:
@@ -658,7 +658,7 @@ jobs:
           retention-days: 7
 
       - name: Cleanup Local Containers
-        if: always() && steps.pentest-decision.outputs.passed == 'true'
+        if: always()
         env:
           API_IMAGE: ${{ env.API_IMAGE }}
         run: |
