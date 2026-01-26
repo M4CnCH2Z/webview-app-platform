@@ -49,6 +49,49 @@ fi
 echo "Release ID: $RELEASE_ID"
 echo "Environment: $SG_ENV, Gate: $SG_GATE, Evidence: $SG_EVIDENCE_TYPE"
 
+# python3 필수 확인 (jq 대체용)
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "Error: python3가 필요합니다 (jq 대체용)."
+  exit 1
+fi
+
+# JSON 유틸리티 (python3)
+json_pretty() {
+  python3 - <<'PY'
+import sys, json
+data = sys.stdin.read()
+try:
+    obj = json.loads(data)
+    print(json.dumps(obj, indent=2, ensure_ascii=False))
+except Exception:
+    print(data)
+PY
+}
+
+json_get_field() {
+  local field="$1"
+  python3 - <<PY
+import sys, json
+data = sys.stdin.read()
+try:
+    obj = json.loads(data)
+    print(obj.get("$field",""))
+except Exception:
+    print("")
+PY
+}
+
+json_summary_from_file() {
+  local file="$1"
+  python3 - <<PY
+import json, sys
+with open("$file","rb") as f:
+    obj = json.loads(f.read().decode("utf-8"))
+summary = obj.get("summary", obj)
+print(json.dumps(summary, separators=(",",":")))
+PY
+}
+
 # =============================================================================
 # HMAC-SHA256 서명 함수
 # 서명 포맷: HMAC(secret, timestamp + "." + method + "." + path + "." + raw_body)
@@ -114,25 +157,16 @@ head -c 500 "$SUMMARY_SOURCE"
 echo ""
 
 # JSON 유효성 검사 (jq 우선, 실패 시 python3로 재검증)
-if ! jq empty "$SUMMARY_SOURCE" 2>/dev/null; then
-  if command -v python3 >/dev/null 2>&1; then
-    python3 - <<PY
+python3 - <<PY
 import json, sys
 with open("$SUMMARY_SOURCE","rb") as f:
     json.loads(f.read().decode("utf-8"))
 PY
-    if [ $? -ne 0 ]; then
-      echo "Invalid JSON in $SUMMARY_SOURCE"
-      exit 1
-    fi
-    echo "JSON 유효성 검사 통과 (python3)"
-  else
-    echo "Invalid JSON in $SUMMARY_SOURCE"
-    exit 1
-  fi
-else
-  echo "JSON 유효성 검사 통과 (jq)"
+if [ $? -ne 0 ]; then
+  echo "Invalid JSON in $SUMMARY_SOURCE"
+  exit 1
 fi
+echo "JSON 유효성 검사 통과 (python3)"
 
 # ---------------------------------------------------------
 # STEP 1: Presign
@@ -156,16 +190,16 @@ EOF
 )
 
 echo "Presign 요청 페이로드:"
-echo "$PRESIGN_PAYLOAD" | jq .
+echo "$PRESIGN_PAYLOAD" | json_pretty
 
 PRESIGN_RES=$(sg_request "POST" "/v1/evidence/presign" "$PRESIGN_PAYLOAD")
 
 echo "Presign 응답: $PRESIGN_RES"
 
 # Presign 응답에서 필요한 값 추출
-UPLOAD_URL=$(echo "$PRESIGN_RES" | jq -r '.upload_url // empty')
-EVIDENCE_ID=$(echo "$PRESIGN_RES" | jq -r '.evidence_id // empty')
-S3_KEY=$(echo "$PRESIGN_RES" | jq -r '.s3_key // empty')
+UPLOAD_URL=$(echo "$PRESIGN_RES" | json_get_field "upload_url")
+EVIDENCE_ID=$(echo "$PRESIGN_RES" | json_get_field "evidence_id")
+S3_KEY=$(echo "$PRESIGN_RES" | json_get_field "s3_key")
 
 if [ -z "$UPLOAD_URL" ] || [ -z "$EVIDENCE_ID" ]; then
   echo "Presign 실패: upload_url 또는 evidence_id가 없습니다"
@@ -195,7 +229,7 @@ echo "S3 업로드 성공"
 echo "SG에 최종 요약본(Summary) 보고 중..."
 
 # Summary 추출 및 검증
-SUMMARY=$(jq -c '.summary // . // empty' "$SUMMARY_SOURCE")
+SUMMARY=$(json_summary_from_file "$SUMMARY_SOURCE")
 
 if [ -z "$SUMMARY" ] || [ "$SUMMARY" == "null" ]; then
   echo "summary 필드 없음, 기본값 사용"
@@ -212,7 +246,7 @@ EOF
 )
 
 echo "Complete 요청 페이로드:"
-echo "$COMPLETE_PAYLOAD" | jq .
+echo "$COMPLETE_PAYLOAD" | json_pretty
 
 COMPLETE_RES=$(sg_request "POST" "/v1/evidence/complete" "$COMPLETE_PAYLOAD")
 
@@ -232,7 +266,7 @@ EVAL_RES=$(sg_request "POST" "/v1/decisions/evaluate" "$EVAL_PAYLOAD")
 
 echo "Evaluate 응답: $EVAL_RES"
 
-echo "$EVAL_RES" | jq -r '.decision_id' > /tmp/sg-ticket-id
+echo "$EVAL_RES" | json_get_field "decision_id" > /tmp/sg-ticket-id
 echo "$EVAL_RES" > /tmp/sg-eval-result
 
 echo "모든 전송 및 판정 요청 완료!"
