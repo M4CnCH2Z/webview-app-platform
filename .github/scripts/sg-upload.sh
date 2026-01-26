@@ -207,7 +207,8 @@ echo "Presign 요청 페이로드:"
 echo "$PRESIGN_PAYLOAD" | json_pretty
 
 if [ -n "$SG_DEBUG_PAYLOAD_PATH" ]; then
-  echo "$PRESIGN_PAYLOAD" > "$SG_DEBUG_PAYLOAD_PATH"
+  mkdir -p "$(dirname "$SG_DEBUG_PAYLOAD_PATH")"
+  printf '%s' "$PRESIGN_PAYLOAD" > "$SG_DEBUG_PAYLOAD_PATH"
 fi
 
 PRESIGN_RES=$(sg_request "POST" "/v1/evidence/presign" "$PRESIGN_PAYLOAD")
@@ -215,9 +216,9 @@ PRESIGN_RES=$(sg_request "POST" "/v1/evidence/presign" "$PRESIGN_PAYLOAD")
 echo "Presign 응답: $PRESIGN_RES"
 
 # Presign 응답에서 필요한 값 추출
-UPLOAD_URL=$(echo "$PRESIGN_RES" | json_get_field "upload_url")
-EVIDENCE_ID=$(echo "$PRESIGN_RES" | json_get_field "evidence_id")
-S3_KEY=$(echo "$PRESIGN_RES" | json_get_field "s3_key")
+UPLOAD_URL=$(printf '%s' "$PRESIGN_RES" | json_get_field "upload_url")
+EVIDENCE_ID=$(printf '%s' "$PRESIGN_RES" | json_get_field "evidence_id")
+S3_KEY=$(printf '%s' "$PRESIGN_RES" | json_get_field "s3_key")
 
 if [ -z "$UPLOAD_URL" ] || [ -z "$EVIDENCE_ID" ]; then
   echo "Presign 실패: upload_url 또는 evidence_id가 없습니다"
