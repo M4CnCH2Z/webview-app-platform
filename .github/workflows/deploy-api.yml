@@ -593,7 +593,7 @@ jobs:
               raw_report = "raw_report.json"
             }
           }
-          $summary | ConvertTo-Json -Depth 6 | Out-File -FilePath (Join-Path $artifacts "results.json") -Encoding utf8
+          $summary | ConvertTo-Json -Depth 6 | Out-File -FilePath (Join-Path $artifacts "results.json") -Encoding utf8NoBOM
 
       - name: Upload Pentest Evidence to Security Gate
         env:
