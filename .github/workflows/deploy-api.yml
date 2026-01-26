@@ -660,6 +660,7 @@ jobs:
           SG_ARTIFACT_NAME: raw_report.json
           SG_RELEASE_ID: ${{ needs.build-image.outputs.image_digest }}
           SG_SUMMARY_FILE: artifacts/results.json
+          SG_DEBUG_PAYLOAD_PATH: artifacts/sg-presign-payload.json
         run: |
           $ws = $env:GITHUB_WORKSPACE
           $drive = $ws.Substring(0,1).ToLower()

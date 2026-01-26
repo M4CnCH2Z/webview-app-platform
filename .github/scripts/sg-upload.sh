@@ -19,6 +19,7 @@ SG_EVIDENCE_TYPE="${SG_EVIDENCE_TYPE:-SAST}"
 SG_ARTIFACT_NAME="${SG_ARTIFACT_NAME:-report.json}"
 SG_RELEASE_ID="${SG_RELEASE_ID:-}"
 SG_SUMMARY_FILE="${SG_SUMMARY_FILE:-}"
+SG_DEBUG_PAYLOAD_PATH="${SG_DEBUG_PAYLOAD_PATH:-}"
 
 if [ -z "$SG_API_URL" ] || [ -z "$SG_API_SECRET" ]; then
   echo "Error: SG_API_URL 또는 SG_API_SECRET이 설정되지 않았습니다."
@@ -198,12 +199,16 @@ fi
 
 # Presign 요청 페이로드 생성
 PRESIGN_PAYLOAD=$(cat <<EOF
-{"release_id":"$RELEASE_ID","env":"$SG_ENV","gate":"$SG_GATE","evidence_type":"$SG_EVIDENCE_TYPE","artifact_name":"$SG_ARTIFACT_NAME","content_type":"application/json","content_length":$FILE_SIZE,"sha256":"$FILE_SHA","producer":{"repo":"${GITHUB_REPOSITORY:-unknown}","workflow":"${GITHUB_WORKFLOW:-unknown}","job":"${GITHUB_JOB:-unknown}","run_id":"${GITHUB_RUN_ID:-0}","attempt":${GITHUB_RUN_ATTEMPT:-1},"actor":"${GITHUB_ACTOR:-unknown}"},"commit_sha":"$COMMIT_SHA","pr_number":$PR_NUMBER}
+{"release_id":"$RELEASE_ID","env":"$SG_ENV","gate":"$SG_GATE","evidence_type":"$SG_EVIDENCE_TYPE","artifact_name":"$SG_ARTIFACT_NAME","content_type":"application/json","content_length":$FILE_SIZE,"sha256":"$FILE_SHA","run_id":"${GITHUB_RUN_ID:-0}","producer":{"repo":"${GITHUB_REPOSITORY:-unknown}","workflow":"${GITHUB_WORKFLOW:-unknown}","job":"${GITHUB_JOB:-unknown}","run_id":"${GITHUB_RUN_ID:-0}","attempt":${GITHUB_RUN_ATTEMPT:-1},"actor":"${GITHUB_ACTOR:-unknown}"},"commit_sha":"$COMMIT_SHA","pr_number":$PR_NUMBER}
 EOF
 )
 
 echo "Presign 요청 페이로드:"
 echo "$PRESIGN_PAYLOAD" | json_pretty
+
+if [ -n "$SG_DEBUG_PAYLOAD_PATH" ]; then
+  echo "$PRESIGN_PAYLOAD" > "$SG_DEBUG_PAYLOAD_PATH"
+fi
 
 PRESIGN_RES=$(sg_request "POST" "/v1/evidence/presign" "$PRESIGN_PAYLOAD")
 
