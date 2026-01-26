@@ -632,11 +632,22 @@ jobs:
 
       - name: Debug Results JSON (WSL)
         run: |
-          $ws = $env:GITHUB_WORKSPACE
-          $drive = $ws.Substring(0,1).ToLower()
-          $rest = $ws.Substring(2) -replace '\\','/'
-          $ws = "/mnt/$drive$rest"
-          & wsl.exe -e bash -lc "cd '$ws' && python3 -c \"import json,sys; p='artifacts/results.json'; b=open(p,'rb').read(); print('WSL first bytes:', ' '.join(f'{x:02X}' for x in b[:16]));\ntry:\n    json.loads(b.decode('utf-8'))\n    print('WSL json.loads OK')\nexcept Exception as e:\n    print('WSL json.loads FAIL:', e)\""
+          $path = Join-Path $env:GITHUB_WORKSPACE "artifacts\results.json"
+          if (-not (Test-Path $path)) {
+            Write-Host "results.json not found: $path"
+            exit 1
+          }
+          $bytes = [System.IO.File]::ReadAllBytes($path)
+          $hex = ($bytes[0..([Math]::Min(15, $bytes.Length-1))] | ForEach-Object { $_.ToString("X2") }) -join " "
+          Write-Host "results.json first bytes (Windows): $hex"
+          $text = [System.Text.Encoding]::UTF8.GetString($bytes)
+          try {
+            $null = $text | ConvertFrom-Json
+            Write-Host "results.json parsed OK (Windows)"
+          } catch {
+            Write-Host "results.json parse failed (Windows): $($_.Exception.Message)"
+            exit 1
+          }
 
       - name: Upload Pentest Evidence to Security Gate
         env:
