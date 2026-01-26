@@ -630,6 +630,14 @@ jobs:
           $enc = New-Object System.Text.UTF8Encoding($false)
           [System.IO.File]::WriteAllText($path, $text, $enc)
 
+      - name: Debug Results JSON (WSL)
+        run: |
+          $ws = $env:GITHUB_WORKSPACE
+          $drive = $ws.Substring(0,1).ToLower()
+          $rest = $ws.Substring(2) -replace '\\','/'
+          $ws = "/mnt/$drive$rest"
+          & wsl.exe -e bash -lc "cd '$ws' && python3 - <<'PY'\nimport json\np='artifacts/results.json'\nwith open(p,'rb') as f:\n    b=f.read()\nprint('WSL first bytes:', ' '.join(f'{x:02X}' for x in b[:16]))\ntry:\n    json.loads(b.decode('utf-8'))\n    print('WSL json.loads OK')\nexcept Exception as e:\n    print('WSL json.loads FAIL:', e)\nPY"
+
       - name: Upload Pentest Evidence to Security Gate
         env:
           SECURITY_GATE_URL: ${{ secrets.SECURITY_GATE_URL }}
