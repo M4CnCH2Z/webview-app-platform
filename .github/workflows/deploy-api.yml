@@ -533,7 +533,7 @@ jobs:
               $result = Invoke-RestMethod -Method Get -Uri "$($env:PENTEST_API_URL.TrimEnd('/'))/api-calls/$($env:RUN_TOKEN)"
             } catch {
               Write-Host "Status check failed: $($_.Exception.Message)"
-              Start-Sleep -Seconds 10
+              Start-Sleep -Seconds 30
               continue
             }
 
@@ -543,7 +543,7 @@ jobs:
               $result | ConvertTo-Json -Depth 10 | Set-Content -Path (Join-Path $artifacts "pentest-result.json")
               break
             }
-            Start-Sleep -Seconds 10
+            Start-Sleep -Seconds 30
           }
 
           if (-not (Test-Path (Join-Path $artifacts "pentest-result.json"))) {
