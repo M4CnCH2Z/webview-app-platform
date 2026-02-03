@@ -87,7 +87,7 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         working-directory: ./apps/api
         run: |
-          echo "골든 이미지를 사용하여 Docker 빌드를 시작합니다..."
+          echo "Starting Docker build with the golden image..."
 
           docker build \
             --build-arg ECR_REGISTRY=$ECR_REGISTRY \
@@ -194,7 +194,7 @@ jobs:
           SECURITY_GATE_HMAC_SECRET: ${{ secrets.SECURITY_GATE_HMAC_SECRET }}
           IMAGE_DIGEST: ${{ needs.build-image.outputs.image_digest }}
         run: |
-          echo " Security Gate 평가 중..."
+          echo "Evaluating Security Gate..."
 
           TIMESTAMP=$(date +%s)
           EVAL_PATH="/v1/decisions/evaluate"
@@ -237,7 +237,7 @@ jobs:
             GATE_PASSED="true"
           else
             GATE_PASSED="false"
-            echo "Gate 실패 사유:"
+            echo "Gate failure reasons:"
             echo "$EVAL_RESPONSE" | jq '.reasons[]'
           fi
 
@@ -257,9 +257,9 @@ jobs:
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.M4CNCH2Z_BOT_SLACK_WEBHOOK_URL }}
         run: |
-          echo "Security Gate FAILED - Slack 알림 전송"
+          echo "Security Gate FAILED - sending Slack notification"
 
-          REASONS_TEXT=$(echo '${{ env.GATE_REASONS }}' | jq -r '.[] | "• \(.code): \(.message)"' 2>/dev/null || echo "• 상세 사유 없음")
+          REASONS_TEXT=$(echo '${{ env.GATE_REASONS }}' | jq -r '.[] | "• \(.code): \(.message)"' 2>/dev/null || echo "• No detailed reasons provided")
 
           if [ -n "$SLACK_WEBHOOK_URL" ]; then
             curl -X POST "$SLACK_WEBHOOK_URL" \
@@ -271,7 +271,7 @@ jobs:
                     \"type\": \"header\",
                     \"text\": {
                       \"type\": \"plain_text\",
-                      \"text\": \"Security Gate 검증 실패\"
+                      \"text\": \"Security Gate Validation Failed\"
                     }
                   },
                   {
@@ -294,7 +294,7 @@ jobs:
                     \"type\": \"section\",
                     \"text\": {
                       \"type\": \"mrkdwn\",
-                      \"text\": \"*실패 사유:*\\n${REASONS_TEXT}\"
+                      \"text\": \"*Failure Reasons:*\\n${REASONS_TEXT}\"
                     }
                   },
                   {
@@ -302,7 +302,7 @@ jobs:
                     \"elements\": [
                       {
                         \"type\": \"button\",
-                        \"text\": {\"type\": \"plain_text\", \"text\": \"📋 Workflow 보기\"},
+                        \"text\": {\"type\": \"plain_text\", \"text\": \"View Workflow\"},
                         \"url\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"
                       }
                     ]
@@ -310,19 +310,19 @@ jobs:
                 ]
               }"
           else
-            echo "SLACK_WEBHOOK_URL이 설정되지 않았습니다"
+            echo "SLACK_WEBHOOK_URL is not set"
           fi
 
       - name: Gate Failure Summary
         if: env.GATE_PASSED != 'true'
         run: |
-          echo "::error::Security Gate FAILED - Staging Promote PR이 생성되지 않습니다."
+          echo "::error::Security Gate FAILED - Staging Promote PR will not be created."
 
-          echo "## 🚨 Security Gate 검증 실패" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚨 Security Gate Validation Failed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          echo "### 📋 기본 정보" >> $GITHUB_STEP_SUMMARY
-          echo "| 항목 | 값 |" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Basic Information" >> $GITHUB_STEP_SUMMARY
+          echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|------|-----|" >> $GITHUB_STEP_SUMMARY
           echo "| Image Digest | \`${{ needs.build-image.outputs.image_digest }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Decision | **${{ env.GATE_DECISION }}** |" >> $GITHUB_STEP_SUMMARY
@@ -342,23 +342,23 @@ jobs:
               echo "" >> $GITHUB_STEP_SUMMARY
 
               if [ "$CRITICAL_COUNT" -gt 20 ]; then
-                echo "> ⚠️ 외 $((CRITICAL_COUNT - 20))건 더 있음. Artifact에서 전체 JSON 확인" >> $GITHUB_STEP_SUMMARY
+                echo "> ⚠️ $((CRITICAL_COUNT - 20)) more items. See the artifact for the full JSON." >> $GITHUB_STEP_SUMMARY
               fi
             else
-              echo "Critical 취약점 없음" >> $GITHUB_STEP_SUMMARY
+              echo "No critical vulnerabilities" >> $GITHUB_STEP_SUMMARY
             fi
           else
-            echo "스캔 결과 파일 없음" >> $GITHUB_STEP_SUMMARY
+            echo "Scan results file not found" >> $GITHUB_STEP_SUMMARY
           fi
 
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          echo "### 📝 Gate 실패 사유" >> $GITHUB_STEP_SUMMARY
+          echo "### 📝 Gate Failure Reasons" >> $GITHUB_STEP_SUMMARY
           echo '```json' >> $GITHUB_STEP_SUMMARY
           echo '${{ env.GATE_REASONS }}' | jq '.' >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "> 보안 취약점을 수정한 후 다시 시도해주세요." >> $GITHUB_STEP_SUMMARY
+          echo "> Please fix the security vulnerabilities and try again." >> $GITHUB_STEP_SUMMARY
 
           exit 1
 
@@ -421,21 +421,21 @@ jobs:
           $script = @'
           API_CID=$(docker compose -f docker-compose.pentest.yml -p local-pentest ps -q api)
           if [ -z "$API_CID" ]; then
-            echo "API 컨테이너를 찾을 수 없습니다."
+            echo "API container not found."
             exit 1
           fi
 
           for i in $(seq 1 30); do
             STATUS=$(docker inspect -f '{{.State.Health.Status}}' "$API_CID" 2>/dev/null || echo "starting")
             if [ "$STATUS" = "healthy" ]; then
-              echo "API가 정상 상태입니다."
+              echo "API is healthy."
               exit 0
             fi
-            echo "API 상태 대기 중... ($i/30) - $STATUS"
+            echo "Waiting for API to become healthy... ($i/30) - $STATUS"
             sleep 5
           done
 
-          echo "API healthcheck 타임아웃"
+          echo "API healthcheck timeout"
           exit 1
           '@
           $normalized = $script -replace "`r`n", "`n"
@@ -777,7 +777,7 @@ jobs:
 
       - name: Update Staging Manifest
         run: |
-          echo "Security Gate PASSED - Manifest 업데이트"
+          echo "Security Gate PASSED - updating manifest"
           wget -q https://github.com/mikefarah/yq/releases/download/v4.40.5/yq_linux_amd64 -O /tmp/yq
           chmod +x /tmp/yq
           /tmp/yq e -i "(.images[] | select(.name == \"763479270202.dkr.ecr.ap-northeast-2.amazonaws.com/shoppingmall-api\")).newTag = \"${{ github.sha }}\"" ${{ env.MANIFEST_FILE }}
@@ -786,7 +786,7 @@ jobs:
           echo "Updated ${{ env.MANIFEST_FILE }}:"
           cat ${{ env.MANIFEST_FILE }}
 
-      - name: Remove Trivy cache (임시 파일 삭제)
+      - name: Remove Trivy cache (temporary files)
         run: |
           sudo rm -rf .cache
           sudo rm -rf .trivy
@@ -803,12 +803,12 @@ jobs:
           commit-message: "chore(staging): promote API image ${{ github.sha }}"
           title: "🚀 Deploy(Staging): Promote API Image"
           body: |
-            ## Staging 배포 요청
+            ## Staging Deployment Request
 
-            Security Gate 검증을 통과한 이미지입니다.
+            This image has passed Security Gate validation.
 
-            ### 이미지 정보
-            | 항목 | 값 |
+            ### Image Information
+            | Item | Value |
             |------|-----|
             | Repository | `${{ env.ECR_REPOSITORY }}` |
             | Tag | `${{ github.sha }}` |
@@ -822,7 +822,7 @@ jobs:
             - [Commit](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})
 
             ---
-            > 이 PR을 머지하면 Staging 환경에 자동 배포됩니다.
+            > Merging this PR will automatically deploy to the Staging environment.
           branch: "deploy/staging-api-${{ github.sha }}"
           base: "main"
           delete-branch: true
@@ -833,13 +833,13 @@ jobs:
 
       - name: Success Summary
         run: |
-          echo "## Build & Security Gate 성공" >> $GITHUB_STEP_SUMMARY
+          echo "## Build & Security Gate Succeeded" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| 항목 | 값 |" >> $GITHUB_STEP_SUMMARY
+          echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|------|-----|" >> $GITHUB_STEP_SUMMARY
           echo "| Image | \`${{ env.ECR_REPOSITORY }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Tag | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Digest | \`${{ needs.build-image.outputs.image_digest }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Decision | **PASS** |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Staging Promote PR이 생성되었습니다." >> $GITHUB_STEP_SUMMARY
+          echo "Staging Promote PR has been created." >> $GITHUB_STEP_SUMMARY
